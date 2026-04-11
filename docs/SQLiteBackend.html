@@ -35,21 +35,18 @@
                     SQLiteBackend
                 </h1>
                 <div class="module-description">
-                    <p>is the SQLite backend for the <a href="#orm">ORM</a>.</p>
-<h2>Usage</h2>
-<pre><code>(load &quot;orm/backends/sqlite3.carp&quot;)
+                    <p>is the SQLite backend for the ORM.</p>
+<p>Loading this file pulls in the ORM core and the <code>carpentry-org/sqlite3</code>
+package, then registers the dynamic helpers that <code>derive-model</code> uses to
+emit SQL and row marshalling.</p>
+<pre><code>(load &quot;git@github.com:carpentry-org/orm@0.1.0&quot; &quot;backends/sqlite3.carp&quot;)
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
-
-(let [db (Result.unsafe-from-success (SQLite3.open &quot;app.db&quot;))]
-  (Item.create-table &amp;db)
-  (Item.insert &amp;db &amp;(Item.init 0 @&quot;hi&quot; false)))
 </code></pre>
-<p>All generated functions take an <code>&amp;SQLite3.SQLite</code> as their first argument.</p>
-<h2>Supported types</h2>
-<p><code>Int</code>, <code>Long</code>, <code>Double</code>, <code>Float</code>, <code>String</code>, <code>Bool</code>. Unknown types raise a
-macro error at expansion time.</p>
+<p>Generated functions take an <code>&amp;SQLite3.SQLite</code> as their first argument.
+Supported field types are <code>Int</code>, <code>Long</code>, <code>Double</code>, <code>Float</code>, <code>String</code>, and
+<code>Bool</code>. Anything else raises a macro error at expansion time.</p>
 
                 </div>
             </div>

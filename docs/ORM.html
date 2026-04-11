@@ -35,38 +35,29 @@
                     ORM
                 </h1>
                 <div class="module-description">
-                    <p>is a database-agnostic ORM layer for Carp.</p>
-<p>The <code>derive-model</code> macro reads a type's field definitions via <code>members</code> and
-generates CRUD functions in the type's module. Backends plug into the macro
-by providing a small set of <code>defndynamic</code> helpers that control SQL dialect
-and row marshalling — see <a href="#backend-api">the backend API</a> below.</p>
+                    <p>is a database-agnostic ORM for Carp.</p>
+<h2>Installation</h2>
+<p>Load a backend from the package. The SQLite backend pulls in the
+ORM core and the <code>sqlite3</code> package transitively:</p>
+<pre><code>(load &quot;git@github.com:carpentry-org/orm@0.1.0&quot; &quot;backends/sqlite3.carp&quot;)
+</code></pre>
 <h2>Usage</h2>
-<pre><code>(load &quot;orm/backends/sqlite3.carp&quot;)
+<pre><code>(load &quot;git@github.com:carpentry-org/orm@0.1.0&quot; &quot;backends/sqlite3.carp&quot;)
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
+
+(defn main []
+  (let-do [db (Result.unsafe-from-success (SQLite3.open &quot;app.db&quot;))]
+    (Item.create-table &amp;db)
+    (ignore (Item.insert &amp;db &amp;(Item.init 0 @&quot;buy milk&quot; false)))
+    (println* &amp;(Item.find-all &amp;db))
+    (SQLite3.close db)))
 </code></pre>
-<p>This generates the following in the <code>Item</code> module:</p>
-<ul>
-<li><code>create-table</code> — <code>(Fn [&amp;Backend.Db] ())</code></li>
-<li><code>insert</code>       — <code>(Fn [&amp;Backend.Db &amp;Item] Int)</code> — returns the new rowid</li>
-<li><code>find-all</code>     — <code>(Fn [&amp;Backend.Db] (Result (Array Item) String))</code></li>
-<li><code>find-by-id</code>   — <code>(Fn [&amp;Backend.Db &amp;Pk] (Result Item String))</code></li>
-<li><code>update</code>       — <code>(Fn [&amp;Backend.Db &amp;Item] ())</code> — writes all data fields</li>
-<li><code>delete-by-id</code> — <code>(Fn [&amp;Backend.Db &amp;Pk] ())</code></li>
-</ul>
-<p>The primary-key argument is a reference even for value types (<code>&amp;Int</code>).</p>
-<h2>Backend API</h2>
-<p>A backend is a module providing these <code>defndynamic</code> functions:</p>
-<ul>
-<li><code>(sql-type t)</code>          — map a Carp type symbol to a SQL type string</li>
-<li><code>(placeholder n)</code>       — parameter placeholder for position <code>n</code> (1-indexed)</li>
-<li><code>(query-fn)</code>            — symbol of the static query function</li>
-<li><code>(last-insert-id-sql)</code>  — SQL for fetching the id of the last inserted row</li>
-<li><code>(extract-col t v)</code>     — form extracting a Carp value from an owned column variable <code>v</code></li>
-<li><code>(bind-value t expr)</code>   — form converting an expression <code>expr</code> into a bound parameter</li>
-</ul>
-<p>See <code>backends/sqlite3.carp</code> for a working example.</p>
+<p><code>derive-model</code> reads the deftype's fields with <code>members</code> and emits CRUD
+functions in the type's module. The SQL dialect and row marshalling are
+delegated to a backend module, so the same model definition works against
+any database with a backend.</p>
 
                 </div>
             </div>

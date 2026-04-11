@@ -1,27 +1,22 @@
 (load "../orm.carp")
 (load "git@github.com:carpentry-org/sqlite3@0.0.6")
 
-(doc SQLiteBackend "is the SQLite backend for the [ORM](#orm).
+(doc SQLiteBackend "is the SQLite backend for the ORM.
 
-## Usage
+Loading this file pulls in the ORM core and the `carpentry-org/sqlite3`
+package, then registers the dynamic helpers that `derive-model` uses to
+emit SQL and row marshalling.
 
 ```
-(load \"orm/backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.1.0\" \"backends/sqlite3.carp\")
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
-
-(let [db (Result.unsafe-from-success (SQLite3.open \"app.db\"))]
-  (Item.create-table &db)
-  (Item.insert &db &(Item.init 0 @\"hi\" false)))
 ```
 
-All generated functions take an `&SQLite3.SQLite` as their first argument.
-
-## Supported types
-
-`Int`, `Long`, `Double`, `Float`, `String`, `Bool`. Unknown types raise a
-macro error at expansion time.
+Generated functions take an `&SQLite3.SQLite` as their first argument.
+Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
+`Bool`. Anything else raises a macro error at expansion time.
 ")
 
 (defmodule SQLiteBackend

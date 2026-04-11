@@ -1,82 +1,112 @@
 # orm
 
-A database-agnostic ORM layer for Carp.
+A database-agnostic ORM for Carp.
 
-`derive-model` reads a type's field definitions at macro-expansion time and
-generates CRUD functions in the type's module. The SQL dialect and row
-marshalling are delegated to a pluggable backend, so the same model
-definition works against any database with a backend module.
+`derive-model` reads a `deftype`'s fields with `members` and emits CRUD
+functions in the type's module. The SQL dialect and row marshalling are
+delegated to a backend module, so the same model definition works against
+any database with a backend.
 
 ## Installation
 
 ```clojure
-(load "git@github.com:carpentry-org/orm@0.1.0")
+(load "git@github.com:carpentry-org/orm@0.1.0" "backends/sqlite3.carp")
 ```
 
-The SQLite backend transitively loads
-[`carpentry-org/sqlite3`](https://github.com/carpentry-org/sqlite3), so you
-do not need to install it separately.
+This pulls in the ORM core and the `carpentry-org/sqlite3` package
+transitively, so you do not need to install either separately.
 
 ## Usage
 
-Load a backend and derive a model:
+### Defining a model
 
 ```clojure
-(load "orm/backends/sqlite3.carp")
-
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
+```
 
-(defn main []
-  (match (SQLite3.open "app.db")
-    (Result.Error e) (IO.errorln &e)
-    (Result.Success db)
-      (do
-        (Item.create-table &db)
+The first argument to `derive-model` is the type, the second is the backend
+module, and the third is the array of primary-key fields (currently a
+single field).
 
-        ; insert returns the auto-assigned rowid
-        (let [new-id (Item.insert &db &(Item.init 0 @"buy milk" false))]
-          (IO.println &(fmt "inserted row %d" new-id)))
+### Creating the table
 
-        ; read
-        (match (Item.find-all &db)
-          (Result.Success items) (println* &items)
-          (Result.Error e) (IO.errorln &e))
+```clojure
+(let-do [db (Result.unsafe-from-success (SQLite3.open "app.db"))]
+  (Item.create-table &db)
+  (SQLite3.close db))
+```
 
-        ; update
-        (Item.update &db &(Item.init 1 @"bought milk" true))
+`create-table` runs `CREATE TABLE IF NOT EXISTS`, so it is safe to call on
+every startup.
 
-        ; delete
-        (Item.delete-by-id &db &1)
+### Inserting
 
-        (SQLite3.close db))))
+```clojure
+(let [new-id (Item.insert &db &(Item.init 0 @"buy milk" false))]
+  (println* new-id))
+```
+
+`insert` writes the non-PK fields and returns the auto-assigned rowid as
+an `Int`. The PK field on the input row is ignored, which is why we pass
+`0`.
+
+### Reading
+
+```clojure
+; All rows
+(match (Item.find-all &db)
+  (Result.Success items) (println* &items)
+  (Result.Error e) (IO.errorln &e))
+
+; By primary key
+(match (Item.find-by-id &db &1)
+  (Result.Success item) (println* &item)
+  (Result.Error _) (println* "not found"))
+```
+
+The PK argument is passed as a reference even for value types like `Int`.
+
+### Updating
+
+```clojure
+(Item.update &db &(Item.init 1 @"bought milk" true))
+```
+
+`update` writes all non-PK fields, using the PK on the row for the WHERE
+clause. Partial updates are not supported, so the typical pattern is
+`find-by-id` then mutate then `update`.
+
+### Deleting
+
+```clojure
+(Item.delete-by-id &db &1)
 ```
 
 ## Generated functions
 
-Given `(derive-model T Backend [pk-field Pk])`, the macro adds the following
-to the `T` module:
+Given `(derive-model T Backend [pk-field Pk])`, the macro adds the
+following functions to the `T` module:
 
-| Function       | Type                                           | Notes                                   |
-|----------------|------------------------------------------------|-----------------------------------------|
-| `create-table` | `(Fn [&Backend.Db] ())`                        | Runs `CREATE TABLE IF NOT EXISTS`.      |
-| `insert`       | `(Fn [&Backend.Db &T] Int)`                    | Returns the newly assigned rowid.       |
-| `find-all`     | `(Fn [&Backend.Db] (Result (Array T) String))` |                                         |
-| `find-by-id`   | `(Fn [&Backend.Db &Pk] (Result T String))`     |                                         |
-| `update`       | `(Fn [&Backend.Db &T] ())`                     | Writes all non-PK fields.               |
-| `delete-by-id` | `(Fn [&Backend.Db &Pk] ())`                    |                                         |
-
-The primary-key argument is passed as a reference even for value types.
+| Function       | Type                                           |
+|----------------|------------------------------------------------|
+| `create-table` | `(Fn [&Backend.Db] ())`                        |
+| `insert`       | `(Fn [&Backend.Db &T] Int)`                    |
+| `find-all`     | `(Fn [&Backend.Db] (Result (Array T) String))` |
+| `find-by-id`   | `(Fn [&Backend.Db &Pk] (Result T String))`     |
+| `update`       | `(Fn [&Backend.Db &T] ())`                     |
+| `delete-by-id` | `(Fn [&Backend.Db &Pk] ())`                    |
 
 ## Backends
 
-A backend is a module providing six `defndynamic` helpers that the ORM
-macro calls at expansion time:
+A backend is a module that defines six `defndynamic` helpers. The ORM
+macro calls them at expansion time to build SQL strings and row marshalling
+code.
 
 ```clojure
 (defmodule MyBackend
-  (defndynamic sql-type [t] ...)           ; carp type → SQL type string
-  (defndynamic placeholder [n] ...)        ; parameter placeholder (1-indexed)
+  (defndynamic sql-type [t] ...)           ; Carp type → SQL type string
+  (defndynamic placeholder [n] ...)        ; parameter placeholder, 1-indexed
   (defndynamic query-fn [] ...)            ; static function the generated code calls
   (defndynamic last-insert-id-sql [] ...)  ; SQL to fetch the last inserted id
   (defndynamic extract-col [t var] ...)    ; form extracting a value from an owned col variable
@@ -84,20 +114,26 @@ macro calls at expansion time:
 )
 ```
 
-`backends/sqlite3.carp` is a working reference.
+`backends/sqlite3.carp` is the reference implementation. It is small
+(under 100 lines) and a good starting point for a new backend.
 
 ## Limitations
 
-- Single-field primary key only. Composite keys raise a macro error at
-  expansion time.
-- At least one non-PK field must be present. A table of only PK fields
-  raises a macro error.
-- `update` overwrites all non-PK fields. There is no partial update — the
-  caller is expected to `find-by-id`, mutate, and `update`.
-- The macro only understands Carp value types that the chosen backend knows
-  about. Unsupported types raise a macro error at expansion time.
-- No transaction support. `begin`/`commit`/`rollback` should be added as
-  backend helpers in a future version.
+- Single-field primary keys only. Composite keys raise a macro error.
+- At least one non-PK field must be present, since `insert` and `update`
+  bind data columns. A table of only PK fields raises a macro error.
+- `update` overwrites all non-PK fields. The typical workflow is
+  `find-by-id`, mutate the result, then `update`.
+- The macro only understands the Carp value types the chosen backend
+  registers. Anything else raises a macro error at expansion time.
+- No transaction support. `begin`, `commit`, and `rollback` should be
+  added as backend helpers in a future version.
+
+## Testing
+
+```
+carp -x test/orm.carp
+```
 
 <hr/>
 

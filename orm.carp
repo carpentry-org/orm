@@ -1,42 +1,34 @@
-(doc ORM "is a database-agnostic ORM layer for Carp.
+(doc ORM "is a database-agnostic ORM for Carp.
 
-The `derive-model` macro reads a type's field definitions via `members` and
-generates CRUD functions in the type's module. Backends plug into the macro
-by providing a small set of `defndynamic` helpers that control SQL dialect
-and row marshalling — see [the backend API](#backend-api) below.
+## Installation
+
+Load a backend from the package. The SQLite backend pulls in the
+ORM core and the `sqlite3` package transitively:
+
+```
+(load \"git@github.com:carpentry-org/orm@0.1.0\" \"backends/sqlite3.carp\")
+```
 
 ## Usage
 
 ```
-(load \"orm/backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.1.0\" \"backends/sqlite3.carp\")
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
+
+(defn main []
+  (let-do [db (Result.unsafe-from-success (SQLite3.open \"app.db\"))]
+    (Item.create-table &db)
+    (ignore (Item.insert &db &(Item.init 0 @\"buy milk\" false)))
+    (println* &(Item.find-all &db))
+    (SQLite3.close db)))
 ```
 
-This generates the following in the `Item` module:
-
-- `create-table` — `(Fn [&Backend.Db] ())`
-- `insert`       — `(Fn [&Backend.Db &Item] Int)` — returns the new rowid
-- `find-all`     — `(Fn [&Backend.Db] (Result (Array Item) String))`
-- `find-by-id`   — `(Fn [&Backend.Db &Pk] (Result Item String))`
-- `update`       — `(Fn [&Backend.Db &Item] ())` — writes all data fields
-- `delete-by-id` — `(Fn [&Backend.Db &Pk] ())`
-
-The primary-key argument is a reference even for value types (`&Int`).
-
-## Backend API
-
-A backend is a module providing these `defndynamic` functions:
-
-- `(sql-type t)`          — map a Carp type symbol to a SQL type string
-- `(placeholder n)`       — parameter placeholder for position `n` (1-indexed)
-- `(query-fn)`            — symbol of the static query function
-- `(last-insert-id-sql)`  — SQL for fetching the id of the last inserted row
-- `(extract-col t v)`     — form extracting a Carp value from an owned column variable `v`
-- `(bind-value t expr)`   — form converting an expression `expr` into a bound parameter
-
-See `backends/sqlite3.carp` for a working example.
+`derive-model` reads the deftype's fields with `members` and emits CRUD
+functions in the type's module. The SQL dialect and row marshalling are
+delegated to a backend module, so the same model definition works against
+any database with a backend.
 ")
 
 (defmodule ORM
