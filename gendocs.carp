@@ -1,0 +1,17 @@
+(load "backends/sqlite3.carp")
+
+(Project.config "title" "orm")
+(Project.config "docs-directory" "./docs/")
+(Project.config "docs-logo" "")
+(Project.config "docs-url" "https://github.com/carpentry-org/orm")
+(Project.config "docs-styling" "../style.css")
+(Project.config "docs-generate-index" false)
+(Project.config "docs-prelude" "A database-agnostic ORM layer for Carp. `derive-model`
+generates CRUD functions for a type by reading its `members` at macro-expansion
+time and delegating SQL dialect / row marshalling to a pluggable backend.
+
+See the [README](https://github.com/carpentry-org/orm) for usage.")
+
+(save-docs ORM SQLiteBackend)
+
+(quit)

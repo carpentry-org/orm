@@ -1,0 +1,320 @@
+(doc ORM "is a database-agnostic ORM layer for Carp.
+
+The `derive-model` macro reads a type's field definitions via `members` and
+generates CRUD functions in the type's module. Backends plug into the macro
+by providing a small set of `defndynamic` helpers that control SQL dialect
+and row marshalling — see [the backend API](#backend-api) below.
+
+## Usage
+
+```
+(load \"orm/backends/sqlite3.carp\")
+
+(deftype Item [id Int text String done Bool])
+(derive-model Item SQLiteBackend [id Int])
+```
+
+This generates the following in the `Item` module:
+
+- `create-table` — `(Fn [&Backend.Db] ())`
+- `insert`       — `(Fn [&Backend.Db &Item] Int)` — returns the new rowid
+- `find-all`     — `(Fn [&Backend.Db] (Result (Array Item) String))`
+- `find-by-id`   — `(Fn [&Backend.Db &Pk] (Result Item String))`
+- `update`       — `(Fn [&Backend.Db &Item] ())` — writes all data fields
+- `delete-by-id` — `(Fn [&Backend.Db &Pk] ())`
+
+The primary-key argument is a reference even for value types (`&Int`).
+
+## Backend API
+
+A backend is a module providing these `defndynamic` functions:
+
+- `(sql-type t)`          — map a Carp type symbol to a SQL type string
+- `(placeholder n)`       — parameter placeholder for position `n` (1-indexed)
+- `(query-fn)`            — symbol of the static query function
+- `(last-insert-id-sql)`  — SQL for fetching the id of the last inserted row
+- `(extract-col t v)`     — form extracting a Carp value from an owned column variable `v`
+- `(bind-value t expr)`   — form converting an expression `expr` into a bound parameter
+
+See `backends/sqlite3.carp` for a working example.
+")
+
+(defmodule ORM
+  ; -------------------------------------------------------------------------
+  ; Dynamic list helpers
+  ; -------------------------------------------------------------------------
+
+  (hidden join)
+  (defndynamic join [sep xs]
+    (if (empty? xs) ""
+      (reduce (fn [acc x] (String.concat [acc sep x]))
+              (car xs) (cdr xs))))
+
+  (hidden pairs)
+  (defndynamic pairs [xs]
+    (if (empty? xs) []
+      (cons (list (car xs) (cadr xs))
+            (ORM.pairs (cddr xs)))))
+
+  (hidden map-idx)
+  (defndynamic map-idx [f xs]
+    (let [i 0 result (list)]
+      (do
+        (while (not (empty? xs))
+          (do
+            (set! result (append result (list (f i (car xs)))))
+            (set! i (+ i 1))
+            (set! xs (cdr xs))))
+        result)))
+
+  (hidden member?)
+  (defndynamic member? [x xs]
+    (if (empty? xs) false
+      (if (= x (car xs)) true
+        (ORM.member? x (cdr xs)))))
+
+  (hidden without)
+  (defndynamic without [mems names]
+    (if (empty? mems) []
+      (if (ORM.member? (car (car mems)) names)
+        (ORM.without (cdr mems) names)
+        (cons (car mems) (ORM.without (cdr mems) names)))))
+
+  ; -------------------------------------------------------------------------
+  ; Backend dispatch: call a defndynamic on a backend module by name
+  ; -------------------------------------------------------------------------
+
+  (hidden backend-call)
+  (defndynamic backend-call [backend fn-name args]
+    (eval (cons (Symbol.prefix backend fn-name) args)))
+
+  (hidden sql-type-for)
+  (defndynamic sql-type-for [backend t]
+    (ORM.backend-call backend 'sql-type (list (list 'quote t))))
+
+  (hidden placeholder-for)
+  (defndynamic placeholder-for [backend n]
+    (ORM.backend-call backend 'placeholder (list n)))
+
+  (hidden bind-for)
+  (defndynamic bind-for [backend t expr]
+    (ORM.backend-call backend 'bind-value
+      (list (list 'quote t) (list 'quote expr))))
+
+  (hidden extract-for)
+  (defndynamic extract-for [backend t var-sym]
+    (ORM.backend-call backend 'extract-col
+      (list (list 'quote t) (list 'quote var-sym))))
+
+  ; -------------------------------------------------------------------------
+  ; SQL fragment generation
+  ; -------------------------------------------------------------------------
+
+  (hidden sql-col-defs)
+  (defndynamic sql-col-defs [backend mems]
+    (ORM.join ", "
+      (map
+        (fn [m] (String.concat [(str (car m)) " " (ORM.sql-type-for backend (cadr m))]))
+        mems)))
+
+  (hidden sql-col-names)
+  (defndynamic sql-col-names [mems]
+    (ORM.join ", " (map (fn [m] (str (car m))) mems)))
+
+  (hidden sql-placeholders)
+  (defndynamic sql-placeholders [backend mems offset]
+    (ORM.join ", "
+      (ORM.map-idx
+        (fn [i _] (ORM.placeholder-for backend (+ i offset)))
+        mems)))
+
+  (hidden sql-where-eq)
+  (defndynamic sql-where-eq [backend mems offset sep]
+    (ORM.join sep
+      (ORM.map-idx
+        (fn [i m]
+          (String.concat
+            [(str (car m)) "=" (ORM.placeholder-for backend (+ i offset))]))
+        mems)))
+
+  ; -------------------------------------------------------------------------
+  ; Row-accessor helpers (used to build bind expressions for INSERT/UPDATE)
+  ; -------------------------------------------------------------------------
+
+  ; `(Symbol.prefix Item text)` → `Item.text`, then `(Item.text row)`.
+  (hidden row-accessor)
+  (defndynamic row-accessor [name m]
+    (list (Symbol.prefix name (car m)) 'row))
+
+  ; Build an array of bind expressions for a row's fields.
+  (hidden bind-row-fields)
+  (defndynamic bind-row-fields [backend name mems]
+    (collect-into
+      (map
+        (fn [m] (ORM.bind-for backend (cadr m) (ORM.row-accessor name m)))
+        mems)
+      array))
+
+  ; Build a single bind expression for the `pk` parameter of find/delete.
+  (hidden bind-pk-arg)
+  (defndynamic bind-pk-arg [backend pk-type]
+    (ORM.bind-for backend pk-type 'pk))
+
+  ; -------------------------------------------------------------------------
+  ; Row-extraction helpers (used by find-all / find-by-id)
+  ; -------------------------------------------------------------------------
+
+  ; Generates a let-binding array that copies each column of `cols-form`
+  ; into local variables `c0`, `c1`, ... so the borrow checker is happy.
+  (hidden row-let-bindings)
+  (defndynamic row-let-bindings [mems cols-form]
+    (collect-into
+      (reduce
+        (fn [acc pair] (append acc pair))
+        (list)
+        (ORM.map-idx
+          (fn [i _]
+            (list
+              (Symbol.from (String.concat ["c" (str i)]))
+              (list 'copy (list 'Array.unsafe-nth cols-form i))))
+          mems))
+      array))
+
+  ; Generates `(Type.init (extract c0) (extract c1) ...)`
+  (hidden init-call-from-cols)
+  (defndynamic init-call-from-cols [backend name mems]
+    (cons (Symbol.prefix name 'init)
+      (ORM.map-idx
+        (fn [i m]
+          (ORM.extract-for backend (cadr m)
+            (Symbol.from (String.concat ["c" (str i)]))))
+        mems)))
+)
+
+; ---------------------------------------------------------------------------
+; The macro
+; ---------------------------------------------------------------------------
+
+(doc derive-model "generates CRUD functions for a type in its own module.
+
+`name` is the deftype symbol. `backend` is a module providing the
+[backend API](#backend-api). `pk-fields` is an array of `[field Type ...]`
+describing the primary key — typically a single field.
+
+The generated functions live in the type's module.")
+(defmacro derive-model [name backend pk-fields]
+  (let [all-mems (eval (list 'members name))
+        pk-mems (ORM.pairs pk-fields)
+        pk-names (map car pk-mems)
+        data-mems (ORM.without all-mems pk-names)
+        pk-type (cadr (car pk-mems))
+        table-name (str name)
+        n-data (length data-mems)
+        _ (cond
+            (= 0 (length pk-mems))
+              (macro-error "derive-model: at least one primary-key field is required")
+            (< 1 (length pk-mems))
+              (macro-error "derive-model: composite primary keys are not yet supported")
+            (= 0 n-data)
+              (macro-error (String.concat
+                ["derive-model: " (str name) " has no non-PK fields to insert/update"]))
+            ())
+
+        ; SQL strings
+        col-defs (ORM.sql-col-defs backend all-mems)
+        pk-name-str (ORM.join ", " (map str pk-names))
+        all-names (ORM.sql-col-names all-mems)
+        data-names (ORM.sql-col-names data-mems)
+        data-placeholders (ORM.sql-placeholders backend data-mems 1)
+
+        create-sql (String.concat
+          ["CREATE TABLE IF NOT EXISTS " table-name
+           " (" col-defs ", PRIMARY KEY (" pk-name-str "))"])
+        insert-sql (String.concat
+          ["INSERT INTO " table-name " (" data-names ")"
+           " VALUES (" data-placeholders ")"])
+        select-all-sql (String.concat
+          ["SELECT " all-names " FROM " table-name])
+        select-by-pk-sql (String.concat
+          ["SELECT " all-names " FROM " table-name
+           " WHERE " (ORM.sql-where-eq backend pk-mems 1 " AND ")])
+        delete-by-pk-sql (String.concat
+          ["DELETE FROM " table-name
+           " WHERE " (ORM.sql-where-eq backend pk-mems 1 " AND ")])
+        update-sql (String.concat
+          ["UPDATE " table-name
+           " SET "   (ORM.sql-where-eq backend data-mems 1 ", ")
+           " WHERE " (ORM.sql-where-eq backend pk-mems (+ n-data 1) " AND ")])
+        last-id-sql (ORM.backend-call backend 'last-insert-id-sql (list))
+        query-sym   (ORM.backend-call backend 'query-fn (list))
+
+        ; Re-usable bind arrays
+        insert-binds (ORM.bind-row-fields backend name data-mems)
+        update-binds (collect-into
+                       (append
+                         (map
+                           (fn [m] (ORM.bind-for backend (cadr m) (ORM.row-accessor name m)))
+                           data-mems)
+                         (map
+                           (fn [m] (ORM.bind-for backend (cadr m) (ORM.row-accessor name m)))
+                           pk-mems))
+                       array)
+        pk-bind (ORM.bind-pk-arg backend pk-type)
+        ]
+    (eval (list 'defmodule name
+
+      ; create-table — runs the CREATE TABLE IF NOT EXISTS statement
+      (list 'defn 'create-table ['db]
+        (list 'ignore (list query-sym 'db create-sql '&[])))
+
+      ; insert — runs INSERT, then returns the newly assigned rowid
+      (list 'defn 'insert ['db 'row]
+        (list 'do
+          (list 'ignore
+            (list query-sym 'db insert-sql (list 'ref insert-binds)))
+          (list 'match (list query-sym 'db last-id-sql '&[])
+            '(Result.Success rows)
+              (list 'if '(= (Array.length &rows) 0) 0
+                (list 'let-do
+                  [(Symbol.from "c0")
+                   '(copy (Array.unsafe-nth (Array.unsafe-nth &rows 0) 0))]
+                  (ORM.extract-for backend 'Int (Symbol.from "c0"))))
+            '(Result.Error _) 0)))
+
+      ; find-all — returns all rows as (Result (Array T) String)
+      (list 'defn 'find-all ['db]
+        (list 'match (list query-sym 'db select-all-sql '&[])
+          '(Result.Error e) '(Result.Error e)
+          '(Result.Success rows)
+            (list 'Result.Success
+              (list 'Array.copy-map
+                (list 'ref
+                  (list 'fn ['cols]
+                    (list 'let-do
+                      (ORM.row-let-bindings all-mems 'cols)
+                      (ORM.init-call-from-cols backend name all-mems))))
+                '&rows))))
+
+      ; find-by-id — looks up a row by its primary key
+      (list 'defn 'find-by-id ['db 'pk]
+        (list 'match
+          (list query-sym 'db select-by-pk-sql (list 'ref [pk-bind]))
+          '(Result.Error e) '(Result.Error e)
+          '(Result.Success rows)
+            (list 'if '(= (Array.length &rows) 0)
+              '(Result.Error @"not found")
+              (list 'let-do
+                (ORM.row-let-bindings all-mems '(Array.unsafe-nth &rows 0))
+                (list 'Result.Success
+                  (ORM.init-call-from-cols backend name all-mems))))))
+
+      ; update — writes all data fields on a row, matched by its PK
+      (list 'defn 'update ['db 'row]
+        (list 'ignore
+          (list query-sym 'db update-sql (list 'ref update-binds))))
+
+      ; delete-by-id — removes the row identified by the given PK
+      (list 'defn 'delete-by-id ['db 'pk]
+        (list 'ignore
+          (list query-sym 'db delete-by-pk-sql (list 'ref [pk-bind]))))
+    ))))

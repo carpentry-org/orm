@@ -1,0 +1,76 @@
+(load "Test.carp")
+(load "../backends/sqlite3.carp")
+
+(use Test)
+
+(deftype Todo [id Int text String done Bool])
+(derive-model Todo SQLiteBackend [id Int])
+
+(deftype Note [id Long title String body String score Double pinned Bool])
+(derive-model Note SQLiteBackend [id Long])
+
+; Open a fresh in-memory DB and run the Todo table migration.
+(defn fresh-db []
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (Todo.create-table &db)
+    db))
+
+(defn insert-todo [db text done]
+  (Todo.insert db &(Todo.init 0 text done)))
+
+(deftest test
+  ;; find-all returns empty after create-table
+  (let-do [db (fresh-db)
+           n (Array.length &(Result.unsafe-from-success (Todo.find-all &db)))]
+    (SQLite3.close db)
+    (assert-equal test 0 n "find-all returns 0 rows after create-table"))
+
+  ;; insert returns sequential rowids
+  (let-do [db (fresh-db)
+           id1 (insert-todo &db @"buy milk" false)
+           id2 (insert-todo &db @"write carp" true)]
+    (SQLite3.close db)
+    (ignore (assert-equal test 1 id1 "insert returns rowid 1 for first row"))
+    (assert-equal test 2 id2 "insert returns rowid 2 for second row"))
+
+  ;; find-by-id round-trips all fields
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore (assert-equal test 1 @(Todo.id &t) "find-by-id returns row with matching id"))
+      (ignore (assert-equal test "buy milk" (Todo.text &t) "find-by-id returns row with stored text"))
+      (assert-equal test false @(Todo.done &t) "find-by-id returns row with stored done flag")))
+
+  ;; update writes data fields
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (Todo.update &db &(Todo.init 1 @"done task" true))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore (assert-equal test "done task" (Todo.text &t) "update writes new text"))
+      (assert-equal test true @(Todo.done &t) "update writes new done flag")))
+
+  ;; delete-by-id removes only the matching row
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"keep" false))
+    (ignore (insert-todo &db @"remove" false))
+    (Todo.delete-by-id &db &2)
+    (let-do [remaining (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (ignore (assert-equal test 1 (Array.length &remaining)
+                "delete-by-id removes exactly one row"))
+      (assert-equal test "keep"
+        (Todo.text (Array.unsafe-nth &remaining 0))
+        "remaining row is the one that wasn't deleted")))
+
+  ;; Long / Double / Bool round-trip through a second model
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (Note.create-table &db)
+    (ignore (Note.insert &db &(Note.init 0l @"title" @"body" 3.14 true)))
+    (let-do [n (Result.unsafe-from-success (Note.find-by-id &db &1l))]
+      (SQLite3.close db)
+      (ignore (assert-equal test "title" (Note.title &n) "Note.title round-trips through SQLite"))
+      (ignore (assert-equal test 3.14 @(Note.score &n) "Note.score round-trips as Double"))
+      (assert-equal test true @(Note.pinned &n) "Note.pinned round-trips as Bool")))
+)

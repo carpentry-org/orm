@@ -1,0 +1,58 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+        <link rel="stylesheet" href="../style.css">
+    </head>
+    <body>
+        <div class="content">
+            <div class="logo">
+                <a href="https://github.com/carpentry-org/orm">
+                    <img src="">
+                </a>
+                <div class="title">
+                    orm
+                </div>
+                <div class="index">
+                    <ul>
+                        <li>
+                            <a href="ORM.html">
+                                ORM
+                            </a>
+                        </li>
+                        <li>
+                            <a href="SQLiteBackend.html">
+                                SQLiteBackend
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="module">
+                <h1>
+                    SQLiteBackend
+                </h1>
+                <div class="module-description">
+                    <p>is the SQLite backend for the <a href="#orm">ORM</a>.</p>
+<h2>Usage</h2>
+<pre><code>(load &quot;orm/backends/sqlite3.carp&quot;)
+
+(deftype Item [id Int text String done Bool])
+(derive-model Item SQLiteBackend [id Int])
+
+(let [db (Result.unsafe-from-success (SQLite3.open &quot;app.db&quot;))]
+  (Item.create-table &amp;db)
+  (Item.insert &amp;db &amp;(Item.init 0 @&quot;hi&quot; false)))
+</code></pre>
+<p>All generated functions take an <code>&amp;SQLite3.SQLite</code> as their first argument.</p>
+<h2>Supported types</h2>
+<p><code>Int</code>, <code>Long</code>, <code>Double</code>, <code>Float</code>, <code>String</code>, <code>Bool</code>. Unknown types raise a
+macro error at expansion time.</p>
+
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

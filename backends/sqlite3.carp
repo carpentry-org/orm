@@ -1,0 +1,91 @@
+(load "../orm.carp")
+(load "git@github.com:carpentry-org/sqlite3@0.0.6")
+
+(doc SQLiteBackend "is the SQLite backend for the [ORM](#orm).
+
+## Usage
+
+```
+(load \"orm/backends/sqlite3.carp\")
+
+(deftype Item [id Int text String done Bool])
+(derive-model Item SQLiteBackend [id Int])
+
+(let [db (Result.unsafe-from-success (SQLite3.open \"app.db\"))]
+  (Item.create-table &db)
+  (Item.insert &db &(Item.init 0 @\"hi\" false)))
+```
+
+All generated functions take an `&SQLite3.SQLite` as their first argument.
+
+## Supported types
+
+`Int`, `Long`, `Double`, `Float`, `String`, `Bool`. Unknown types raise a
+macro error at expansion time.
+")
+
+(defmodule SQLiteBackend
+  ; Map a Carp type symbol to a SQLite storage class.
+  (hidden sql-type)
+  (defndynamic sql-type [t]
+    (cond
+      (= t 'Int) "INTEGER"
+      (= t 'Long) "INTEGER"
+      (= t 'Bool) "INTEGER"
+      (= t 'Double) "REAL"
+      (= t 'Float) "REAL"
+      (= t 'String) "TEXT"
+      (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
+
+  ; SQLite parameter placeholders are 1-indexed, `?1 ?2 ...`.
+  (hidden placeholder)
+  (defndynamic placeholder [n]
+    (String.concat ["?" (str n)]))
+
+  ; The static function the generated code calls to run a query.
+  (hidden query-fn)
+  (defndynamic query-fn [] 'SQLite3.query)
+
+  ; SQL snippet that returns the most recent auto-assigned rowid.
+  (hidden last-insert-id-sql)
+  (defndynamic last-insert-id-sql [] "SELECT last_insert_rowid()")
+
+  ; Given a Carp type and a variable holding an owned SQLite3.Type value,
+  ; return a form extracting the underlying Carp value.
+  (hidden extract-col)
+  (defndynamic extract-col [t col-var]
+    (cond
+      (= t 'Int)
+        (list 'match col-var
+          '(SQLite3.Type.Integer v) 'v
+          '_ '0)
+      (= t 'Long)
+        (list 'Long.from-int
+          (list 'match col-var
+            '(SQLite3.Type.Integer v) 'v
+            '_ '0))
+      (= t 'Double)
+        (list 'match col-var
+          '(SQLite3.Type.Floating v) 'v
+          '_ '0.0)
+      (= t 'Float)
+        (list 'Double.to-float
+          (list 'match col-var
+            '(SQLite3.Type.Floating v) 'v
+            '_ '0.0))
+      (= t 'String)
+        (list 'match col-var
+          '(SQLite3.Type.Text v) 'v
+          '_ '@"")
+      (= t 'Bool)
+        (list 'match col-var
+          '(SQLite3.Type.Integer v) '(/= v 0)
+          '_ 'false)
+      (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
+
+  ; Given a Carp type and an expression producing a reference to the value,
+  ; return a form that converts it into a bound parameter.
+  (hidden bind-value)
+  (defndynamic bind-value [t expr]
+    (list 'to-sqlite3 (list 'copy expr)))
+)
