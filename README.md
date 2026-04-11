@@ -9,12 +9,22 @@ any database with a backend.
 
 ## Installation
 
+The package ships the ORM core and a set of backends. Load the backend
+you want via the two-argument form of `load`:
+
 ```clojure
+; SQLite (also pulls in the carpentry-org/sqlite3 package transitively)
 (load "git@github.com:carpentry-org/orm@0.1.0" "backends/sqlite3.carp")
 ```
 
-This pulls in the ORM core and the `carpentry-org/sqlite3` package
-transitively, so you do not need to install either separately.
+If you are writing your own backend you can load just the core:
+
+```clojure
+(load "git@github.com:carpentry-org/orm@0.1.0")
+```
+
+This gives you the `derive-model` macro without pulling in any database
+driver.
 
 ## Usage
 
@@ -105,7 +115,7 @@ code.
 
 ```clojure
 (defmodule MyBackend
-  (defndynamic sql-type [t] ...)           ; Carp type → SQL type string
+  (defndynamic sql-type [t] ...)           ; Carp type -> SQL type string
   (defndynamic placeholder [n] ...)        ; parameter placeholder, 1-indexed
   (defndynamic query-fn [] ...)            ; static function the generated code calls
   (defndynamic last-insert-id-sql [] ...)  ; SQL to fetch the last inserted id

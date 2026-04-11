@@ -133,7 +133,7 @@ any database with a backend.
   ; Row-accessor helpers (used to build bind expressions for INSERT/UPDATE)
   ; -------------------------------------------------------------------------
 
-  ; `(Symbol.prefix Item text)` → `Item.text`, then `(Item.text row)`.
+  ; `(Symbol.prefix Item text)` becomes `Item.text`, then `(Item.text row)`.
   (hidden row-accessor)
   (defndynamic row-accessor [name m]
     (list (Symbol.prefix name (car m)) 'row))
@@ -191,7 +191,7 @@ any database with a backend.
 
 `name` is the deftype symbol. `backend` is a module providing the
 [backend API](#backend-api). `pk-fields` is an array of `[field Type ...]`
-describing the primary key — typically a single field.
+describing the primary key (typically a single field).
 
 The generated functions live in the type's module.")
 (defmacro derive-model [name backend pk-fields]
@@ -255,11 +255,11 @@ The generated functions live in the type's module.")
         ]
     (eval (list 'defmodule name
 
-      ; create-table — runs the CREATE TABLE IF NOT EXISTS statement
+      ; create-table: runs the CREATE TABLE IF NOT EXISTS statement
       (list 'defn 'create-table ['db]
         (list 'ignore (list query-sym 'db create-sql '&[])))
 
-      ; insert — runs INSERT, then returns the newly assigned rowid
+      ; insert: runs INSERT, then returns the newly assigned rowid
       (list 'defn 'insert ['db 'row]
         (list 'do
           (list 'ignore
@@ -273,7 +273,7 @@ The generated functions live in the type's module.")
                   (ORM.extract-for backend 'Int (Symbol.from "c0"))))
             '(Result.Error _) 0)))
 
-      ; find-all — returns all rows as (Result (Array T) String)
+      ; find-all: returns all rows as (Result (Array T) String)
       (list 'defn 'find-all ['db]
         (list 'match (list query-sym 'db select-all-sql '&[])
           '(Result.Error e) '(Result.Error e)
@@ -287,7 +287,7 @@ The generated functions live in the type's module.")
                       (ORM.init-call-from-cols backend name all-mems))))
                 '&rows))))
 
-      ; find-by-id — looks up a row by its primary key
+      ; find-by-id: looks up a row by its primary key
       (list 'defn 'find-by-id ['db 'pk]
         (list 'match
           (list query-sym 'db select-by-pk-sql (list 'ref [pk-bind]))
@@ -300,12 +300,12 @@ The generated functions live in the type's module.")
                 (list 'Result.Success
                   (ORM.init-call-from-cols backend name all-mems))))))
 
-      ; update — writes all data fields on a row, matched by its PK
+      ; update: writes all data fields on a row, matched by its PK
       (list 'defn 'update ['db 'row]
         (list 'ignore
           (list query-sym 'db update-sql (list 'ref update-binds))))
 
-      ; delete-by-id — removes the row identified by the given PK
+      ; delete-by-id: removes the row identified by the given PK
       (list 'defn 'delete-by-id ['db 'pk]
         (list 'ignore
           (list query-sym 'db delete-by-pk-sql (list 'ref [pk-bind]))))
