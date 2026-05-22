@@ -3,20 +3,26 @@
 
 (use Test)
 
-(deftype Todo [id Int text String done Bool])
+(deftype Todo [id Int
+               text String
+               done Bool])
 (derive-model Todo SQLiteBackend [id Int])
 
-(deftype Note [id Long title String body String score Double pinned Bool])
+(deftype Note [id Long
+               title String
+               body String
+               score Double
+               pinned Bool])
 (derive-model Note SQLiteBackend [id Long])
 
 ; Open a fresh in-memory DB and run the Todo table migration.
 (defn fresh-db []
   (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
-    (Todo.create-table &db)
+    (ignore (Todo.create-table &db))
     db))
 
 (defn insert-todo [db text done]
-  (Todo.insert db &(Todo.init 0 text done)))
+  (Result.unsafe-from-success (Todo.insert db &(Todo.init 0 text done))))
 
 (deftest test
   ;; find-all returns empty after create-table
@@ -38,39 +44,97 @@
     (ignore (insert-todo &db @"buy milk" false))
     (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
       (SQLite3.close db)
-      (ignore (assert-equal test 1 @(Todo.id &t) "find-by-id returns row with matching id"))
-      (ignore (assert-equal test "buy milk" (Todo.text &t) "find-by-id returns row with stored text"))
-      (assert-equal test false @(Todo.done &t) "find-by-id returns row with stored done flag")))
+      (ignore
+        (assert-equal test
+          1
+          @(Todo.id &t)
+          "find-by-id returns row with matching id"))
+      (ignore
+        (assert-equal test
+          "buy milk"
+          (Todo.text &t)
+          "find-by-id returns row with stored text"))
+      (assert-equal test
+        false
+        @(Todo.done &t)
+        "find-by-id returns row with stored done flag")))
 
   ;; update writes data fields
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
-    (Todo.update &db &(Todo.init 1 @"done task" true))
+    (ignore (Todo.update &db &(Todo.init 1 @"done task" true)))
     (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
       (SQLite3.close db)
-      (ignore (assert-equal test "done task" (Todo.text &t) "update writes new text"))
+      (ignore
+        (assert-equal test "done task" (Todo.text &t) "update writes new text"))
       (assert-equal test true @(Todo.done &t) "update writes new done flag")))
 
   ;; delete-by-id removes only the matching row
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"keep" false))
     (ignore (insert-todo &db @"remove" false))
-    (Todo.delete-by-id &db &2)
+    (ignore (Todo.delete-by-id &db &2))
     (let-do [remaining (Result.unsafe-from-success (Todo.find-all &db))]
       (SQLite3.close db)
-      (ignore (assert-equal test 1 (Array.length &remaining)
-                "delete-by-id removes exactly one row"))
-      (assert-equal test "keep"
+      (ignore
+        (assert-equal test
+          1
+          (Array.length &remaining)
+          "delete-by-id removes exactly one row"))
+      (assert-equal test
+        "keep"
         (Todo.text (Array.unsafe-nth &remaining 0))
         "remaining row is the one that wasn't deleted")))
 
   ;; Long / Double / Bool round-trip through a second model
   (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
-    (Note.create-table &db)
+    (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"title" @"body" 3.14 true)))
     (let-do [n (Result.unsafe-from-success (Note.find-by-id &db &1l))]
       (SQLite3.close db)
-      (ignore (assert-equal test "title" (Note.title &n) "Note.title round-trips through SQLite"))
-      (ignore (assert-equal test 3.14 @(Note.score &n) "Note.score round-trips as Double"))
-      (assert-equal test true @(Note.pinned &n) "Note.pinned round-trips as Bool")))
-)
+      (ignore
+        (assert-equal test
+          "title"
+          (Note.title &n)
+          "Note.title round-trips through SQLite"))
+      (ignore
+        (assert-equal test
+          3.14
+          @(Note.score &n)
+          "Note.score round-trips as Double"))
+      (assert-equal test
+        true
+        @(Note.pinned &n)
+        "Note.pinned round-trips as Bool")))
+
+  ;; create-table returns success
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.create-table &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "create-table returns Result.Success"))
+
+  ;; insert on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.insert &db &(Todo.init 0 @"fail" false))]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "insert on missing table returns Result.Error"))
+
+  ;; update on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.update &db &(Todo.init 1 @"fail" true))]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "update on missing table returns Result.Error"))
+
+  ;; delete-by-id on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.delete-by-id &db &1)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "delete-by-id on missing table returns Result.Error")))
