@@ -43,23 +43,25 @@ single field).
 
 ```clojure
 (let-do [db (Result.unsafe-from-success (SQLite3.open "app.db"))]
-  (Item.create-table &db)
+  (ignore (Item.create-table &db))
   (SQLite3.close db))
 ```
 
 `create-table` runs `CREATE TABLE IF NOT EXISTS`, so it is safe to call on
-every startup.
+every startup. It returns `(Result () String)` — an error if the
+statement fails (e.g. the database is read-only).
 
 ### Inserting
 
 ```clojure
-(let [new-id (Item.insert &db &(Item.init 0 @"buy milk" false))]
-  (println* new-id))
+(match (Item.insert &db &(Item.init 0 @"buy milk" false))
+  (Result.Success new-id) (println* new-id)
+  (Result.Error e) (IO.errorln &e))
 ```
 
-`insert` writes the non-PK fields and returns the auto-assigned rowid as
-an `Int`. The PK field on the input row is ignored, which is why we pass
-`0`.
+`insert` writes the non-PK fields and returns the auto-assigned rowid
+wrapped in a `Result`. The PK field on the input row is ignored, which
+is why we pass `0`.
 
 ### Reading
 
@@ -80,17 +82,18 @@ The PK argument is passed as a reference even for value types like `Int`.
 ### Updating
 
 ```clojure
-(Item.update &db &(Item.init 1 @"bought milk" true))
+(ignore (Item.update &db &(Item.init 1 @"bought milk" true)))
 ```
 
 `update` writes all non-PK fields, using the PK on the row for the WHERE
-clause. Partial updates are not supported, so the typical pattern is
-`find-by-id` then mutate then `update`.
+clause and returns `(Result () String)`. Partial updates are not
+supported, so the typical pattern is `find-by-id` then mutate then
+`update`.
 
 ### Deleting
 
 ```clojure
-(Item.delete-by-id &db &1)
+(ignore (Item.delete-by-id &db &1))
 ```
 
 ## Generated functions
@@ -100,12 +103,12 @@ following functions to the `T` module:
 
 | Function       | Type                                           |
 |----------------|------------------------------------------------|
-| `create-table` | `(Fn [&Backend.Db] ())`                        |
-| `insert`       | `(Fn [&Backend.Db &T] Int)`                    |
+| `create-table` | `(Fn [&Backend.Db] (Result () String))`        |
+| `insert`       | `(Fn [&Backend.Db &T] (Result Int String))`    |
 | `find-all`     | `(Fn [&Backend.Db] (Result (Array T) String))` |
 | `find-by-id`   | `(Fn [&Backend.Db &Pk] (Result T String))`     |
-| `update`       | `(Fn [&Backend.Db &T] ())`                     |
-| `delete-by-id` | `(Fn [&Backend.Db &Pk] ())`                    |
+| `update`       | `(Fn [&Backend.Db &T] (Result () String))`     |
+| `delete-by-id` | `(Fn [&Backend.Db &Pk] (Result () String))`    |
 
 ## Backends
 
