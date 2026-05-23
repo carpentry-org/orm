@@ -392,3 +392,90 @@ The generated functions live in the type's module.")
                             '(Result.Success ())
                             '(Result.Error e)
                             '(Result.Error e)))))))
+
+; ---------------------------------------------------------------------------
+; Transaction support
+; ---------------------------------------------------------------------------
+
+(defmodule ORM
+  (hidden txn-stmt-form)
+  (defndynamic txn-stmt-form [backend sql-name db-sym]
+    (let [query-sym (ORM.backend-call backend 'query-fn (list))
+          sql (ORM.backend-call backend sql-name (list))]
+      (list 'match
+            (list query-sym db-sym sql '&[])
+            '(Result.Success _)
+            '(Result.Success ())
+            '(Result.Error e)
+            '(Result.Error e))))
+
+  (doc begin "begins a database transaction.
+
+`backend` is the backend module and `db` is a reference to the database
+connection. Returns `(Result () String)`.
+
+```
+(ORM.begin SQLiteBackend &db)
+```")
+  (defmacro begin [backend db] (ORM.txn-stmt-form backend 'begin-sql db))
+
+  (doc commit "commits the current transaction.
+
+Returns `(Result () String)`.
+
+```
+(ORM.commit SQLiteBackend &db)
+```")
+  (defmacro commit [backend db] (ORM.txn-stmt-form backend 'commit-sql db))
+
+  (doc rollback "rolls back the current transaction.
+
+Returns `(Result () String)`.
+
+```
+(ORM.rollback SQLiteBackend &db)
+```")
+  (defmacro rollback [backend db] (ORM.txn-stmt-form backend 'rollback-sql db))
+
+  (doc with-transaction "runs `body` inside a transaction with auto-rollback.
+
+`body` must evaluate to `(Result a String)`. If it returns `Success`,
+the transaction is committed and the value is returned. If it returns
+`Error`, the transaction is rolled back and the error is propagated.
+If the commit itself fails, the transaction is also rolled back.
+
+```
+(ORM.with-transaction SQLiteBackend &db
+  (do
+    (ignore (Item.insert &db &item1))
+    (Item.insert &db &item2)))
+```")
+  (defmacro with-transaction [backend db body]
+    (let [query-sym (ORM.backend-call backend 'query-fn (list))
+          begin-sql (ORM.backend-call backend 'begin-sql (list))
+          commit-sql (ORM.backend-call backend 'commit-sql (list))
+          rollback-sql (ORM.backend-call backend 'rollback-sql (list))]
+      (list 'match
+            (list query-sym db begin-sql '&[])
+            '(Result.Error e)
+            '(Result.Error e)
+            '(Result.Success _)
+            (list 'let
+                  ['txn-res body]
+                  (list 'match
+                        'txn-res
+                        '(Result.Error e)
+                        (list 'do
+                              (list 'ignore
+                                    (list query-sym db rollback-sql '&[]))
+                              '(Result.Error e))
+                        '(Result.Success v)
+                        (list 'match
+                              (list query-sym db commit-sql '&[])
+                              '(Result.Error e)
+                              (list 'do
+                                    (list 'ignore
+                                          (list query-sym db rollback-sql '&[]))
+                                    '(Result.Error e))
+                              '(Result.Success _)
+                              '(Result.Success v))))))))
