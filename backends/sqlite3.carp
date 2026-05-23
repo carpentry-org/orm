@@ -34,8 +34,7 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
 
   ; SQLite parameter placeholders are 1-indexed, `?1 ?2 ...`.
   (hidden placeholder)
-  (defndynamic placeholder [n]
-    (String.concat ["?" (str n)]))
+  (defndynamic placeholder [n] (String.concat ["?" (str n)]))
 
   ; The static function the generated code calls to run a query.
   (hidden query-fn)
@@ -50,37 +49,30 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
   (hidden extract-col)
   (defndynamic extract-col [t col-var]
     (cond
-      (= t 'Int)
-        (list 'match col-var
-          '(SQLite3.Type.Integer v) 'v
-          '_ '0)
+      (= t 'Int) (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0)
       (= t 'Long)
         (list 'Long.from-int
-          (list 'match col-var
-            '(SQLite3.Type.Integer v) 'v
-            '_ '0))
-      (= t 'Double)
-        (list 'match col-var
-          '(SQLite3.Type.Floating v) 'v
-          '_ '0.0)
+              (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0))
+      (= t 'Double) (list 'match col-var '(SQLite3.Type.Floating v) 'v '_ '0.0)
       (= t 'Float)
         (list 'Double.to-float
-          (list 'match col-var
-            '(SQLite3.Type.Floating v) 'v
-            '_ '0.0))
-      (= t 'String)
-        (list 'match col-var
-          '(SQLite3.Type.Text v) 'v
-          '_ '@"")
+              (list 'match col-var '(SQLite3.Type.Floating v) 'v '_ '0.0))
+      (= t 'String) (list 'match col-var '(SQLite3.Type.Text v) 'v '_ '@"")
       (= t 'Bool)
-        (list 'match col-var
-          '(SQLite3.Type.Integer v) '(/= v 0)
-          '_ 'false)
+        (list 'match col-var '(SQLite3.Type.Integer v) '(/= v 0) '_ 'false)
       (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
 
   ; Given a Carp type and an expression producing a reference to the value,
   ; return a form that converts it into a bound parameter.
   (hidden bind-value)
-  (defndynamic bind-value [t expr]
-    (list 'to-sqlite3 (list 'copy expr)))
-)
+  (defndynamic bind-value [t expr] (list 'to-sqlite3 (list 'copy expr)))
+
+  ; SQL statements for transaction control.
+  (hidden begin-sql)
+  (defndynamic begin-sql [] "BEGIN TRANSACTION")
+
+  (hidden commit-sql)
+  (defndynamic commit-sql [] "COMMIT")
+
+  (hidden rollback-sql)
+  (defndynamic rollback-sql [] "ROLLBACK"))

@@ -137,4 +137,76 @@
     (SQLite3.close db)
     (assert-true test
       (match res (Result.Error _) true (Result.Success _) false)
-      "delete-by-id on missing table returns Result.Error")))
+      "delete-by-id on missing table returns Result.Error"))
+
+  ;; begin and commit preserve data
+  (let-do [db (fresh-db)]
+    (ignore (ORM.begin SQLiteBackend &db))
+    (ignore (insert-todo &db @"in txn" false))
+    (ignore (ORM.commit SQLiteBackend &db))
+    (let-do [rows (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 (Array.length &rows) "commit preserves inserted row")))
+
+  ;; begin and rollback undo data
+  (let-do [db (fresh-db)]
+    (ignore (ORM.begin SQLiteBackend &db))
+    (ignore (insert-todo &db @"will rollback" false))
+    (ignore (ORM.rollback SQLiteBackend &db))
+    (let-do [rows (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test 0 (Array.length &rows) "rollback undoes inserted row")))
+
+  ;; with-transaction commits on success
+  (let-do [db (fresh-db)
+           res (ORM.with-transaction SQLiteBackend
+                                     &db
+                                     (Todo.insert &db
+                                                  &(Todo.init 0
+                                                              @"committed"
+                                                              false)))]
+    (let-do [rows (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (ignore
+        (assert-true test
+          (match res (Result.Success _) true (Result.Error _) false)
+          "with-transaction returns success on commit"))
+      (assert-equal test
+        1
+        (Array.length &rows)
+        "with-transaction commits data on success")))
+
+  ;; with-transaction rolls back on error
+  (let-do [db (fresh-db)
+           res (ORM.with-transaction SQLiteBackend
+                                     &db
+                                     (do
+                                       (ignore
+                                         (Todo.insert &db
+                                                      &(Todo.init 0
+                                                                  @"temp"
+                                                                  false)))
+                                       (the (Result () String)
+                                            (Result.Error @"deliberate"))))]
+    (let-do [rows (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (ignore
+        (assert-true test
+          (match res (Result.Error _) true (Result.Success _) false)
+          "with-transaction returns error on body failure"))
+      (assert-equal test
+        0
+        (Array.length &rows)
+        "with-transaction rolls back on error")))
+
+  ;; with-transaction propagates the body result value
+  (let-do [db (fresh-db)
+           res (ORM.with-transaction SQLiteBackend
+                                     &db
+                                     (Todo.insert &db
+                                                  &(Todo.init 0 @"get id" false)))]
+    (SQLite3.close db)
+    (assert-equal test
+      1
+      (Result.unsafe-from-success res)
+      "with-transaction propagates the body result value")))

@@ -96,6 +96,39 @@ supported, so the typical pattern is `find-by-id` then mutate then
 (ignore (Item.delete-by-id &db &1))
 ```
 
+### Transactions
+
+The ORM provides transaction support through macros that work with any
+backend.
+
+#### Manual control
+
+```clojure
+(ignore (ORM.begin SQLiteBackend &db))
+(ignore (Todo.insert &db &(Todo.init 0 @"buy milk" false)))
+(ignore (ORM.commit SQLiteBackend &db))
+```
+
+`ORM.begin`, `ORM.commit`, and `ORM.rollback` each take a backend module
+and a database reference, returning `(Result () String)`.
+
+#### Automatic rollback
+
+`ORM.with-transaction` begins a transaction, evaluates a body expression,
+and commits on success or rolls back on error:
+
+```clojure
+(ORM.with-transaction SQLiteBackend &db
+  (do
+    (ignore (Todo.insert &db &item1))
+    (Todo.insert &db &item2)))
+```
+
+The body must evaluate to `(Result a String)`. On `Success` the
+transaction is committed and the value is returned. On `Error` (or if
+the commit itself fails) the transaction is rolled back and the error
+is propagated.
+
 ## Generated functions
 
 Given `(derive-model T Backend [pk-field Pk])`, the macro adds the
@@ -124,6 +157,9 @@ code.
   (defndynamic last-insert-id-sql [] ...)  ; SQL to fetch the last inserted id
   (defndynamic extract-col [t var] ...)    ; form extracting a value from an owned col variable
   (defndynamic bind-value [t expr] ...)    ; form converting an expression for binding
+  (defndynamic begin-sql [] ...)           ; SQL to begin a transaction
+  (defndynamic commit-sql [] ...)          ; SQL to commit a transaction
+  (defndynamic rollback-sql [] ...)        ; SQL to roll back a transaction
 )
 ```
 
@@ -139,8 +175,8 @@ code.
   `find-by-id`, mutate the result, then `update`.
 - The macro only understands the Carp value types the chosen backend
   registers. Anything else raises a macro error at expansion time.
-- No transaction support. `begin`, `commit`, and `rollback` should be
-  added as backend helpers in a future version.
+- `with-transaction` requires the body to return a `(Result a String)`.
+  Use `do` to group multiple expressions.
 
 ## Testing
 
