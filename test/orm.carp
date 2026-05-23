@@ -86,6 +86,50 @@
         (Todo.text (Array.unsafe-nth &remaining 0))
         "remaining row is the one that wasn't deleted")))
 
+  ;; find-where filters by condition
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (let-do [done-items (Result.unsafe-from-success
+               (Todo.find-where &db "done = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-equal test
+        1
+        (Array.length &done-items)
+        "find-where returns only matching rows")))
+
+  ;; find-where with multiple conditions
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-where &db
+                                "done = ?1 AND text = ?2"
+                                &[(to-sqlite3 0) (to-sqlite3 @"buy milk")]))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          1
+          (Array.length &items)
+          "find-where with multiple conditions"))
+      (assert-equal test
+        "buy milk"
+        (Todo.text (Array.unsafe-nth &items 0))
+        "find-where returns correct row")))
+
+  ;; find-where returns empty when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-where &db "text = ?1" &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &items)
+        "find-where returns empty array when no match")))
+
   ;; Long / Double / Bool round-trip through a second model
   (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
