@@ -241,6 +241,8 @@ The generated functions live in the type's module.")
            data-placeholders
            ")"])
         select-all-sql (String.concat ["SELECT " all-names " FROM " table-name])
+        select-where-prefix (String.concat
+          ["SELECT " all-names " FROM " table-name " WHERE "])
         select-by-pk-sql (String.concat
           ["SELECT "
            all-names
@@ -340,6 +342,39 @@ The generated functions live in the type's module.")
                                                                                    name
                                                                                    all-mems))))
                                         '&rows))))
+
+                ; find-where: returns rows matching a WHERE clause
+                (list 'doc
+                      'find-where
+                      "returns rows matching a SQL WHERE clause.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'find-where
+                      ['db 'where-clause 'params]
+                      (list 'let
+                            ['sql
+                             (list 'String.append
+                                   select-where-prefix
+                                   'where-clause)]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'Result.Success
+                                        (list 'Array.copy-map
+                                              (list 'ref
+                                                    (list 'fn
+                                                          ['cols]
+                                                          (list 'let-do
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
+                                              '&rows)))))
 
                 ; find-by-id: looks up a row by its primary key
                 (list 'defn

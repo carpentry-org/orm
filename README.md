@@ -79,6 +79,24 @@ is why we pass `0`.
 
 The PK argument is passed as a reference even for value types like `Int`.
 
+```clojure
+; By WHERE clause with parameterized values
+(match (Item.find-where &db "done = ?1" &[(to-sqlite3 0)])
+  (Result.Success items) (println* &items)
+  (Result.Error e) (IO.errorln &e))
+
+; Multiple conditions
+(match (Item.find-where &db "done = ?1 AND text = ?2"
+                        &[(to-sqlite3 1) (to-sqlite3 @"buy milk")])
+  (Result.Success items) (println* &items)
+  (Result.Error e) (IO.errorln &e))
+```
+
+`find-where` takes a SQL WHERE clause as a string and an array of
+`SQLite3.Type` parameter values. Parameters use positional placeholders
+(`?1`, `?2`, …) and are bound safely — they are never interpolated into
+the SQL string. The function returns all matching rows.
+
 ### Updating
 
 ```clojure
@@ -140,6 +158,7 @@ following functions to the `T` module:
 | `insert`       | `(Fn [&Backend.Db &T] (Result Int String))`    |
 | `find-all`     | `(Fn [&Backend.Db] (Result (Array T) String))` |
 | `find-by-id`   | `(Fn [&Backend.Db &Pk] (Result T String))`     |
+| `find-where`   | `(Fn [&Backend.Db (Ref String) (Ref (Array Backend.Type))] (Result (Array T) String))` |
 | `update`       | `(Fn [&Backend.Db &T] (Result () String))`     |
 | `delete-by-id` | `(Fn [&Backend.Db &Pk] (Result () String))`    |
 
