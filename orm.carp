@@ -150,9 +150,27 @@ any database with a backend.
         mems)
       array))
 
-  ; Build a single bind expression for the `pk` parameter of find/delete.
-  (hidden bind-pk-arg)
-  (defndynamic bind-pk-arg [backend pk-type] (ORM.bind-for backend pk-type 'pk))
+  ; Return the parameter symbol for the i-th PK field.
+  ; Single-PK models use `pk`; composite-PK models use `pk0`, `pk1`, ...
+  (hidden pk-param-sym)
+  (defndynamic pk-param-sym [n-pks i]
+    (if (= 1 n-pks) 'pk (Symbol.from (String.concat ["pk" (str i)]))))
+
+  ; Return a list of parameter symbols for all PK fields.
+  (hidden pk-param-syms)
+  (defndynamic pk-param-syms [pk-mems]
+    (let [n (length pk-mems)]
+      (ORM.map-idx (fn [i _] (ORM.pk-param-sym n i)) pk-mems)))
+
+  ; Build an array of bind expressions for PK parameters of find/delete.
+  (hidden bind-pk-args)
+  (defndynamic bind-pk-args [backend pk-mems]
+    (let [n (length pk-mems)]
+      (collect-into
+        (ORM.map-idx
+          (fn [i m] (ORM.bind-for backend (cadr m) (ORM.pk-param-sym n i)))
+          pk-mems)
+        array)))
 
   ; -------------------------------------------------------------------------
   ; Row-extraction helpers (used by find-all / find-by-id)
@@ -192,7 +210,12 @@ any database with a backend.
 
 `name` is the deftype symbol. `backend` is a module providing the
 [backend API](#backend-api). `pk-fields` is an array of `[field Type ...]`
-describing the primary key (typically a single field).
+describing the primary key (one or more fields).
+
+For single-PK models, `insert` omits the PK column (auto-increment) and
+returns the assigned rowid. For composite-PK models, `insert` includes
+all fields and returns `(Result () String)`. `find-by-id` and
+`delete-by-id` accept one argument per PK field.
 
 The generated functions live in the type's module.")
 (defmacro derive-model [name backend pk-fields]
@@ -200,16 +223,14 @@ The generated functions live in the type's module.")
         pk-mems (ORM.pairs pk-fields)
         pk-names (map car pk-mems)
         data-mems (ORM.without all-mems pk-names)
-        pk-type (cadr (car pk-mems))
         table-name (str name)
         n-data (length data-mems)
+        n-pk (length pk-mems)
+        is-composite (< 1 n-pk)
         _ (cond
-          (= 0 (length pk-mems))
+          (= 0 n-pk)
             (macro-error
               "derive-model: at least one primary-key field is required")
-          (< 1 (length pk-mems))
-            (macro-error
-              "derive-model: composite primary keys are not yet supported")
           (= 0 n-data)
             (macro-error
               (String.concat
@@ -231,14 +252,18 @@ The generated functions live in the type's module.")
            ", PRIMARY KEY ("
            pk-name-str
            "))"])
+        insert-names (if is-composite all-names data-names)
+        insert-placeholders (if is-composite
+          (ORM.sql-placeholders backend all-mems 1)
+          data-placeholders)
         insert-sql (String.concat
           ["INSERT INTO "
            table-name
            " ("
-           data-names
+           insert-names
            ")"
            " VALUES ("
-           data-placeholders
+           insert-placeholders
            ")"])
         select-all-sql (String.concat ["SELECT " all-names " FROM " table-name])
         select-where-prefix (String.concat
@@ -265,7 +290,8 @@ The generated functions live in the type's module.")
         last-id-sql (ORM.backend-call backend 'last-insert-id-sql (list))
         query-sym (ORM.backend-call backend 'query-fn (list))
         ; Re-usable bind arrays
-        insert-binds (ORM.bind-row-fields backend name data-mems)
+        insert-mems (if is-composite all-mems data-mems)
+        insert-binds (ORM.bind-row-fields backend name insert-mems)
         update-binds (collect-into
           (append
             (map
@@ -275,7 +301,8 @@ The generated functions live in the type's module.")
               (fn [m] (ORM.bind-for backend (cadr m) (ORM.row-accessor name m)))
               pk-mems))
           array)
-        pk-bind (ORM.bind-pk-arg backend pk-type)]
+        pk-params (ORM.pk-param-syms pk-mems)
+        pk-binds (ORM.bind-pk-args backend pk-mems)]
     (eval (list 'defmodule
                 name
 
@@ -290,36 +317,49 @@ The generated functions live in the type's module.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; insert: runs INSERT, then returns the newly assigned rowid
-                (list 'defn
-                      'insert
-                      ['db 'row]
-                      (list 'match
-                            (list query-sym
-                                  'db
-                                  insert-sql
-                                  (list 'ref insert-binds))
-                            '(Result.Error e)
-                            '(Result.Error e)
-                            '(Result.Success _)
-                            (list 'match
-                                  (list query-sym 'db last-id-sql '&[])
-                                  '(Result.Error e2)
-                                  '(Result.Error e2)
-                                  '(Result.Success rows)
-                                  (list 'if
-                                        '(= (Array.length &rows) 0)
-                                        '(Result.Error @"no rowid returned")
-                                        (list 'let-do
-                                              [(Symbol.from "c0")
-                                               '(copy
-                                                 (Array.unsafe-nth (Array.unsafe-nth &rows
-                                                                                     0)
-                                                                   0))]
-                                              (list 'Result.Success
-                                                    (ORM.extract-for backend
-                                                                     'Int
-                                                                     (Symbol.from "c0"))))))))
+                ; insert: runs INSERT; returns rowid for single-PK or () for composite
+                (if is-composite
+                  (list 'defn
+                        'insert
+                        ['db 'row]
+                        (list 'match
+                              (list query-sym
+                                    'db
+                                    insert-sql
+                                    (list 'ref insert-binds))
+                              '(Result.Success _)
+                              '(Result.Success ())
+                              '(Result.Error e)
+                              '(Result.Error e)))
+                  (list 'defn
+                        'insert
+                        ['db 'row]
+                        (list 'match
+                              (list query-sym
+                                    'db
+                                    insert-sql
+                                    (list 'ref insert-binds))
+                              '(Result.Error e)
+                              '(Result.Error e)
+                              '(Result.Success _)
+                              (list 'match
+                                    (list query-sym 'db last-id-sql '&[])
+                                    '(Result.Error e2)
+                                    '(Result.Error e2)
+                                    '(Result.Success rows)
+                                    (list 'if
+                                          '(= (Array.length &rows) 0)
+                                          '(Result.Error @"no rowid returned")
+                                          (list 'let-do
+                                                [(Symbol.from "c0")
+                                                 '(copy
+                                                   (Array.unsafe-nth (Array.unsafe-nth &rows
+                                                                                       0)
+                                                                     0))]
+                                                (list 'Result.Success
+                                                      (ORM.extract-for backend
+                                                                       'Int
+                                                                       (Symbol.from "c0")))))))))
 
                 ; find-all: returns all rows as (Result (Array T) String)
                 (list 'defn
@@ -376,15 +416,15 @@ The generated functions live in the type's module.")
                                                                                          all-mems))))
                                               '&rows)))))
 
-                ; find-by-id: looks up a row by its primary key
+                ; find-by-id: looks up a row by its primary key(s)
                 (list 'defn
                       'find-by-id
-                      ['db 'pk]
+                      (collect-into (cons 'db pk-params) array)
                       (list 'match
                             (list query-sym
                                   'db
                                   select-by-pk-sql
-                                  (list 'ref [pk-bind]))
+                                  (list 'ref pk-binds))
                             '(Result.Error e)
                             '(Result.Error e)
                             '(Result.Success rows)
@@ -414,15 +454,15 @@ The generated functions live in the type's module.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; delete-by-id: removes the row identified by the given PK
+                ; delete-by-id: removes the row identified by the given PK(s)
                 (list 'defn
                       'delete-by-id
-                      ['db 'pk]
+                      (collect-into (cons 'db pk-params) array)
                       (list 'match
                             (list query-sym
                                   'db
                                   delete-by-pk-sql
-                                  (list 'ref [pk-bind]))
+                                  (list 'ref pk-binds))
                             '(Result.Success _)
                             '(Result.Success ())
                             '(Result.Error e)
