@@ -36,8 +36,24 @@ driver.
 ```
 
 The first argument to `derive-model` is the type, the second is the backend
-module, and the third is the array of primary-key fields (currently a
-single field).
+module, and the third is the array of primary-key fields (one or more).
+
+### Composite primary keys
+
+```clojure
+(deftype Enrollment [sid Int cid Int grade String])
+(derive-model Enrollment SQLiteBackend [sid Int cid Int])
+```
+
+For composite-PK models, `insert` includes all fields (PK values are
+user-supplied, not auto-incremented) and returns `(Result () String)`.
+`find-by-id` and `delete-by-id` accept one argument per PK field:
+
+```clojure
+(ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+(Enrollment.find-by-id &db &1 &101)
+(Enrollment.delete-by-id &db &1 &101)
+```
 
 ### Creating the table
 
@@ -162,6 +178,10 @@ following functions to the `T` module:
 | `update`       | `(Fn [&Backend.Db &T] (Result () String))`     |
 | `delete-by-id` | `(Fn [&Backend.Db &Pk] (Result () String))`    |
 
+For composite-PK models (`[pk1 T1 pk2 T2 ...]`), `insert` returns
+`(Result () String)` (no rowid), and `find-by-id`/`delete-by-id` accept
+one argument per PK field (`&Pk1 &Pk2 ...`).
+
 ## Backends
 
 A backend is a module that defines six `defndynamic` helpers. The ORM
@@ -187,7 +207,6 @@ code.
 
 ## Limitations
 
-- Single-field primary keys only. Composite keys raise a macro error.
 - At least one non-PK field must be present, since `insert` and `update`
   bind data columns. A table of only PK fields raises a macro error.
 - `update` overwrites all non-PK fields. The typical workflow is

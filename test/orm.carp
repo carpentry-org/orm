@@ -15,6 +15,12 @@
                pinned Bool])
 (derive-model Note SQLiteBackend [id Long])
 
+; Composite PK model: a many-to-many join table
+(deftype Enrollment [sid Int
+                     cid Int
+                     grade String])
+(derive-model Enrollment SQLiteBackend [sid Int cid Int])
+
 ; Open a fresh in-memory DB and run the Todo table migration.
 (defn fresh-db []
   (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
@@ -253,4 +259,94 @@
     (assert-equal test
       1
       (Result.unsafe-from-success res)
-      "with-transaction propagates the body result value")))
+      "with-transaction propagates the body result value"))
+
+  ;; --- Composite primary key tests ---
+
+  ;; create-table with composite PK succeeds
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Enrollment.create-table &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "composite PK: create-table succeeds"))
+
+  ;; insert with composite PK returns ()
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (let-do [res (Enrollment.insert &db &(Enrollment.init 1 101 @"A"))]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Success _) true (Result.Error _) false)
+        "composite PK: insert returns success")))
+
+  ;; find-by-id with composite PK round-trips all fields
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B+")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (let-do [e (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &102))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          1
+          @(Enrollment.sid &e)
+          "composite PK: find-by-id returns correct sid"))
+      (ignore
+        (assert-equal test
+          102
+          @(Enrollment.cid &e)
+          "composite PK: find-by-id returns correct cid"))
+      (assert-equal test
+        "B+"
+        (Enrollment.grade &e)
+        "composite PK: find-by-id returns correct grade")))
+
+  ;; find-by-id not found
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (let-do [res (Enrollment.find-by-id &db &99 &99)]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Error _) true (Result.Success _) false)
+        "composite PK: find-by-id returns error when not found")))
+
+  ;; update with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.update &db &(Enrollment.init 1 101 @"A+")))
+    (let-do [e (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &101))]
+      (SQLite3.close db)
+      (assert-equal test
+        "A+"
+        (Enrollment.grade &e)
+        "composite PK: update modifies data field")))
+
+  ;; delete-by-id with composite PK removes only the matching row
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (ignore (Enrollment.delete-by-id &db &1 &101))
+    (let-do [remaining (Result.unsafe-from-success (Enrollment.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        2
+        (Array.length &remaining)
+        "composite PK: delete-by-id removes exactly one row")))
+
+  ;; find-all with composite PK returns all rows
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"B")))
+    (let-do [all (Result.unsafe-from-success (Enrollment.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        2
+        (Array.length &all)
+        "composite PK: find-all returns all rows"))))
