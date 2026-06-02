@@ -14,13 +14,13 @@ you want via the two-argument form of `load`:
 
 ```clojure
 ; SQLite (also pulls in the carpentry-org/sqlite3 package transitively)
-(load "git@github.com:carpentry-org/orm@0.1.0" "backends/sqlite3.carp")
+(load "git@github.com:carpentry-org/orm@0.2.0" "backends/sqlite3.carp")
 ```
 
 If you are writing your own backend you can load just the core:
 
 ```clojure
-(load "git@github.com:carpentry-org/orm@0.1.0")
+(load "git@github.com:carpentry-org/orm@0.2.0")
 ```
 
 This gives you the `derive-model` macro without pulling in any database
