@@ -136,6 +136,59 @@
         (Array.length &items)
         "find-where returns empty array when no match")))
 
+  ;; count returns 0 on empty table
+  (let-do [db (fresh-db)
+           n (Result.unsafe-from-success (Todo.count &db))]
+    (SQLite3.close db)
+    (assert-equal test 0 n "count returns 0 on empty table"))
+
+  ;; count returns correct number after inserts
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 3 n "count returns 3 after three inserts")))
+
+  ;; count-where returns matching count
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (let-do [n (Result.unsafe-from-success
+               (Todo.count-where &db "done = ?1" &[(to-sqlite3 0)]))]
+      (SQLite3.close db)
+      (assert-equal test 2 n "count-where returns 2 for done=false")))
+
+  ;; count-where returns 0 when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [n (Result.unsafe-from-success
+               (Todo.count-where &db "text = ?1" &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test 0 n "count-where returns 0 when no match")))
+
+  ;; count works with composite PK model
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"B")))
+    (let-do [n (Result.unsafe-from-success (Enrollment.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 2 n "composite PK: count returns 2")))
+
+  ;; count-where works with composite PK model
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B+")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (let-do [n (Result.unsafe-from-success
+               (Enrollment.count-where &db "sid = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-equal test 2 n "composite PK: count-where filters correctly")))
+
   ;; Long / Double / Bool round-trip through a second model
   (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
