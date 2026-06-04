@@ -402,4 +402,179 @@
       (assert-equal test
         2
         (Array.length &all)
-        "composite PK: find-all returns all rows"))))
+        "composite PK: find-all returns all rows")))
+
+  ;; --- delete-where tests ---
+
+  ;; delete-where removes matching rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (ignore (Todo.delete-where &db "done = ?1" &[(to-sqlite3 0)]))
+    (let-do [remaining (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          1
+          (Array.length &remaining)
+          "delete-where removes matching rows"))
+      (assert-equal test
+        "write carp"
+        (Todo.text (Array.unsafe-nth &remaining 0))
+        "delete-where keeps non-matching rows")))
+
+  ;; delete-where with no matches is a no-op
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (ignore (Todo.delete-where &db "text = ?1" &[(to-sqlite3 @"nonexistent")]))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "delete-where with no matches is a no-op")))
+
+  ;; delete-where on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.delete-where &db "done = ?1" &[(to-sqlite3 0)])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "delete-where on missing table returns error"))
+
+  ;; delete-where with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B+")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (ignore (Enrollment.delete-where &db "sid = ?1" &[(to-sqlite3 1)]))
+    (let-do [n (Result.unsafe-from-success (Enrollment.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "composite PK: delete-where removes matching rows")))
+
+  ;; --- find-first tests ---
+
+  ;; find-first returns a row from a non-empty table
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (let-do [t (Result.unsafe-from-success (Todo.find-first &db))]
+      (SQLite3.close db)
+      (assert-equal test "buy milk" (Todo.text &t) "find-first returns a row")))
+
+  ;; find-first returns error on empty table
+  (let-do [db (fresh-db)
+           res (Todo.find-first &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "find-first returns error on empty table"))
+
+  ;; find-first on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.find-first &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "find-first on missing table returns error"))
+
+  ;; find-first with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (let-do [e (Result.unsafe-from-success (Enrollment.find-first &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        "A"
+        (Enrollment.grade &e)
+        "composite PK: find-first returns a row")))
+
+  ;; --- find-first-where tests ---
+
+  ;; find-first-where returns the first matching row
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (let-do [t (Result.unsafe-from-success
+               (Todo.find-first-where &db "done = ?1" &[(to-sqlite3 0)]))]
+      (SQLite3.close db)
+      (assert-equal test
+        "buy milk"
+        (Todo.text &t)
+        "find-first-where returns a matching row")))
+
+  ;; find-first-where returns error when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [res (Todo.find-first-where &db
+                                        "text = ?1"
+                                        &[(to-sqlite3 @"nonexistent")])]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Error _) true (Result.Success _) false)
+        "find-first-where returns error when no match")))
+
+  ;; find-first-where with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B+")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (let-do [e (Result.unsafe-from-success
+               (Enrollment.find-first-where &db "sid = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-equal test
+        1
+        @(Enrollment.sid &e)
+        "composite PK: find-first-where returns matching row")))
+
+  ;; --- exists? tests ---
+
+  ;; exists? returns true when rows match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (let-do [res (Result.unsafe-from-success
+               (Todo.exists? &db "done = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-true test res "exists? returns true when rows match")))
+
+  ;; exists? returns false when no rows match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [res (Result.unsafe-from-success
+               (Todo.exists? &db "text = ?1" &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test false res "exists? returns false when no match")))
+
+  ;; exists? returns false on empty table
+  (let-do [db (fresh-db)
+           res (Result.unsafe-from-success
+             (Todo.exists? &db "done = ?1" &[(to-sqlite3 1)]))]
+    (SQLite3.close db)
+    (assert-equal test false res "exists? returns false on empty table"))
+
+  ;; exists? on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.exists? &db "done = ?1" &[(to-sqlite3 1)])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "exists? on missing table returns error"))
+
+  ;; exists? with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"B")))
+    (let-do [yes (Result.unsafe-from-success
+               (Enrollment.exists? &db "sid = ?1" &[(to-sqlite3 1)]))
+             no (Result.unsafe-from-success
+               (Enrollment.exists? &db "sid = ?1" &[(to-sqlite3 99)]))]
+      (SQLite3.close db)
+      (ignore
+        (assert-true test yes "composite PK: exists? true for matching sid"))
+      (assert-equal test
+        false
+        no
+        "composite PK: exists? false for non-matching sid"))))
