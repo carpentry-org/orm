@@ -305,7 +305,10 @@ The generated functions live in the type's module.")
               pk-mems))
           array)
         pk-params (ORM.pk-param-syms pk-mems)
-        pk-binds (ORM.bind-pk-args backend pk-mems)]
+        pk-binds (ORM.bind-pk-args backend pk-mems)
+        delete-where-prefix (String.concat ["DELETE FROM " table-name " WHERE "])
+        find-first-sql (String.concat [select-all-sql " LIMIT 1"])
+        exists-prefix (String.concat ["SELECT 1 FROM " table-name " WHERE "])]
     (eval (list 'defmodule
                 name
 
@@ -529,7 +532,109 @@ The generated functions live in the type's module.")
                             '(Result.Success _)
                             '(Result.Success ())
                             '(Result.Error e)
-                            '(Result.Error e)))))))
+                            '(Result.Error e)))
+
+                ; delete-where: removes rows matching a WHERE clause
+                (list 'doc
+                      'delete-where
+                      "deletes rows matching a SQL WHERE clause.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'delete-where
+                      ['db 'where-clause 'params]
+                      (list 'let
+                            ['sql
+                             (list 'String.append
+                                   delete-where-prefix
+                                   'where-clause)]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Success _)
+                                  '(Result.Success ())
+                                  '(Result.Error e)
+                                  '(Result.Error e))))
+
+                ; find-first: returns the first row in the table
+                (list 'doc
+                      'find-first
+                      "returns the first row from the table, or an error if empty.")
+                (list 'defn
+                      'find-first
+                      ['db]
+                      (list 'match
+                            (list query-sym 'db find-first-sql '&[])
+                            '(Result.Error e)
+                            '(Result.Error e)
+                            '(Result.Success rows)
+                            (list 'if
+                                  '(= (Array.length &rows) 0)
+                                  '(Result.Error @"not found")
+                                  (list 'let-do
+                                        (ORM.row-let-bindings all-mems
+                                                              '(Array.unsafe-nth &rows
+                                                                                 0))
+                                        (list 'Result.Success
+                                              (ORM.init-call-from-cols backend
+                                                                       name
+                                                                       all-mems))))))
+
+                ; find-first-where: returns first row matching a WHERE clause
+                (list 'doc
+                      'find-first-where
+                      "returns the first row matching a SQL WHERE clause, or an error if none match.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'find-first-where
+                      ['db 'where-clause 'params]
+                      (list 'let
+                            ['sql-base
+                             (list 'String.append
+                                   select-where-prefix
+                                   'where-clause)
+                             'sql
+                             (list 'String.append '&sql-base " LIMIT 1")]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'if
+                                        '(= (Array.length &rows) 0)
+                                        '(Result.Error @"not found")
+                                        (list 'let-do
+                                              (ORM.row-let-bindings all-mems
+                                                                    '(Array.unsafe-nth &rows
+                                                                                       0))
+                                              (list 'Result.Success
+                                                    (ORM.init-call-from-cols backend
+                                                                             name
+                                                                             all-mems)))))))
+
+                ; exists?: checks whether any rows match a WHERE clause
+                (list 'doc
+                      'exists?
+                      "returns whether any rows match a SQL WHERE clause.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'exists?
+                      ['db 'where-clause 'params]
+                      (list 'let
+                            ['sql-base
+                             (list 'String.append exists-prefix 'where-clause)
+                             'sql
+                             (list 'String.append '&sql-base " LIMIT 1")]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  '(Result.Success (< 0 (Array.length &rows))))))))))
 
 ; ---------------------------------------------------------------------------
 ; Transaction support
