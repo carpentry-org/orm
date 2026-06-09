@@ -668,8 +668,7 @@ an error if no rows match.
                       (list 'let
                             ['sql
                              (list 'String.append
-                                   (String.concat
-                                     [select-all-sql " ORDER BY "])
+                                   (String.concat [select-all-sql " ORDER BY "])
                                    'order-by)]
                             (list 'match
                                   (list query-sym 'db '&sql '&[])
@@ -682,13 +681,11 @@ an error if no rows match.
                                                     (list 'fn
                                                           ['cols]
                                                           (list 'let-do
-                                                                (ORM.row-let-bindings
-                                                                  all-mems
-                                                                  'cols)
-                                                                (ORM.init-call-from-cols
-                                                                  backend
-                                                                  name
-                                                                  all-mems))))
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
                                               '&rows)))))
 
                 ; find-where-ordered: filtered rows sorted by ORDER BY
@@ -723,13 +720,11 @@ given ORDER BY clause.
                                                     (list 'fn
                                                           ['cols]
                                                           (list 'let-do
-                                                                (ORM.row-let-bindings
-                                                                  all-mems
-                                                                  'cols)
-                                                                (ORM.init-call-from-cols
-                                                                  backend
-                                                                  name
-                                                                  all-mems))))
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
                                               '&rows)))))
 
                 ; find-page: paginated rows with ORDER BY
@@ -746,13 +741,12 @@ rows to skip.")
                       ['db 'order-by 'limit 'offset]
                       (list 'let
                             ['lim-s
-                             (list 'Int.str '&limit)
+                             (list 'Int.str 'limit)
                              'off-s
-                             (list 'Int.str '&offset)
+                             (list 'Int.str 'offset)
                              'sql
                              (list 'str*
-                                   (String.concat
-                                     [select-all-sql " ORDER BY "])
+                                   (String.concat [select-all-sql " ORDER BY "])
                                    'order-by
                                    " LIMIT "
                                    '&lim-s
@@ -769,13 +763,11 @@ rows to skip.")
                                                     (list 'fn
                                                           ['cols]
                                                           (list 'let-do
-                                                                (ORM.row-let-bindings
-                                                                  all-mems
-                                                                  'cols)
-                                                                (ORM.init-call-from-cols
-                                                                  backend
-                                                                  name
-                                                                  all-mems))))
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
                                               '&rows)))))
 
                 ; find-where-page: filtered paginated rows
@@ -798,9 +790,9 @@ rows to skip.")
                                    select-where-prefix
                                    'where-clause)
                              'lim-s
-                             (list 'Int.str '&limit)
+                             (list 'Int.str 'limit)
                              'off-s
-                             (list 'Int.str '&offset)
+                             (list 'Int.str 'offset)
                              'sql
                              (list 'str*
                                    '&base
@@ -821,13 +813,11 @@ rows to skip.")
                                                     (list 'fn
                                                           ['cols]
                                                           (list 'let-do
-                                                                (ORM.row-let-bindings
-                                                                  all-mems
-                                                                  'cols)
-                                                                (ORM.init-call-from-cols
-                                                                  backend
-                                                                  name
-                                                                  all-mems))))
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
                                               '&rows)))))))))
 
 ; ---------------------------------------------------------------------------
