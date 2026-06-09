@@ -217,6 +217,10 @@ returns the assigned rowid. For composite-PK models, `insert` includes
 all fields and returns `(Result () String)`. `find-by-id` and
 `delete-by-id` accept one argument per PK field.
 
+`find-ordered` and `find-where-ordered` accept an ORDER BY clause
+(e.g. `\"text ASC\"`). `find-page` and `find-where-page` add
+LIMIT/OFFSET pagination on top of ordering.
+
 The generated functions live in the type's module.")
 (defmacro derive-model [name backend pk-fields]
   (let [all-mems (eval (list 'members name))
@@ -649,7 +653,172 @@ an error if no rows match.
                                                           (ORM.extract-for backend
                                                                            'Int
                                                                            (Symbol.from "c0"))
-                                                          0)))))))))))
+                                                          0)))))))
+
+                ; find-ordered: returns all rows sorted by ORDER BY clause
+                (list 'doc
+                      'find-ordered
+                      "returns all rows sorted by the given ORDER BY clause.
+
+`order-by` is a SQL fragment (e.g. `\"text ASC\"` or
+`\"id DESC, text ASC\"`).")
+                (list 'defn
+                      'find-ordered
+                      ['db 'order-by]
+                      (list 'let
+                            ['sql
+                             (list 'String.append
+                                   (String.concat [select-all-sql " ORDER BY "])
+                                   'order-by)]
+                            (list 'match
+                                  (list query-sym 'db '&sql '&[])
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'Result.Success
+                                        (list 'Array.copy-map
+                                              (list 'ref
+                                                    (list 'fn
+                                                          ['cols]
+                                                          (list 'let-do
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
+                                              '&rows)))))
+
+                ; find-where-ordered: filtered rows sorted by ORDER BY
+                (list 'doc
+                      'find-where-ordered
+                      "returns rows matching a SQL WHERE clause, sorted by the
+given ORDER BY clause.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`),
+`params` is a ref to an array of bound parameters, and
+`order-by` is a SQL fragment (e.g. `\"text ASC\"`).")
+                (list 'defn
+                      'find-where-ordered
+                      ['db 'where-clause 'params 'order-by]
+                      (list 'let
+                            ['base
+                             (list 'String.append
+                                   select-where-prefix
+                                   'where-clause)
+                             's1
+                             (list 'String.append '&base " ORDER BY ")
+                             'sql
+                             (list 'String.append '&s1 'order-by)]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'Result.Success
+                                        (list 'Array.copy-map
+                                              (list 'ref
+                                                    (list 'fn
+                                                          ['cols]
+                                                          (list 'let-do
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
+                                              '&rows)))))
+
+                ; find-page: paginated rows with ORDER BY
+                (list 'doc
+                      'find-page
+                      "returns a page of rows sorted by the given ORDER BY
+clause.
+
+`order-by` is a SQL fragment (e.g. `\"id ASC\"`), `limit` is the
+maximum number of rows to return, and `offset` is the number of
+rows to skip.")
+                (list 'defn
+                      'find-page
+                      ['db 'order-by 'limit 'offset]
+                      (list 'let
+                            ['lim-s
+                             (list 'Int.str 'limit)
+                             'off-s
+                             (list 'Int.str 'offset)
+                             'sql
+                             (list 'str*
+                                   (String.concat [select-all-sql " ORDER BY "])
+                                   'order-by
+                                   " LIMIT "
+                                   '&lim-s
+                                   " OFFSET "
+                                   '&off-s)]
+                            (list 'match
+                                  (list query-sym 'db '&sql '&[])
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'Result.Success
+                                        (list 'Array.copy-map
+                                              (list 'ref
+                                                    (list 'fn
+                                                          ['cols]
+                                                          (list 'let-do
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
+                                              '&rows)))))
+
+                ; find-where-page: filtered paginated rows
+                (list 'doc
+                      'find-where-page
+                      "returns a page of rows matching a SQL WHERE clause,
+sorted by the given ORDER BY clause.
+
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`),
+`params` is a ref to an array of bound parameters,
+`order-by` is a SQL fragment (e.g. `\"id ASC\"`), `limit` is the
+maximum number of rows to return, and `offset` is the number of
+rows to skip.")
+                (list 'defn
+                      'find-where-page
+                      ['db 'where-clause 'params 'order-by 'limit 'offset]
+                      (list 'let
+                            ['base
+                             (list 'String.append
+                                   select-where-prefix
+                                   'where-clause)
+                             'lim-s
+                             (list 'Int.str 'limit)
+                             'off-s
+                             (list 'Int.str 'offset)
+                             'sql
+                             (list 'str*
+                                   '&base
+                                   " ORDER BY "
+                                   'order-by
+                                   " LIMIT "
+                                   '&lim-s
+                                   " OFFSET "
+                                   '&off-s)]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Error e)
+                                  '(Result.Error e)
+                                  '(Result.Success rows)
+                                  (list 'Result.Success
+                                        (list 'Array.copy-map
+                                              (list 'ref
+                                                    (list 'fn
+                                                          ['cols]
+                                                          (list 'let-do
+                                                                (ORM.row-let-bindings all-mems
+                                                                                      'cols)
+                                                                (ORM.init-call-from-cols backend
+                                                                                         name
+                                                                                         all-mems))))
+                                              '&rows)))))))))
 
 ; ---------------------------------------------------------------------------
 ; Transaction support
