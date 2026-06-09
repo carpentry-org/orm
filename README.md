@@ -113,6 +113,40 @@ The PK argument is passed as a reference even for value types like `Int`.
 (`?1`, `?2`, …) and are bound safely — they are never interpolated into
 the SQL string. The function returns all matching rows.
 
+### Ordering and pagination
+
+```clojure
+; All rows, sorted
+(match (Item.find-ordered &db "text ASC")
+  (Result.Success items) (println* &items)
+  (Result.Error e) (IO.errorln &e))
+
+; Filtered rows, sorted
+(match (Item.find-where-ordered &db "done = ?1" &[(to-sqlite3 0)] "text ASC")
+  (Result.Success items) (println* &items)
+  (Result.Error e) (IO.errorln &e))
+
+; Paginated: page 1 (first 10 rows, sorted by id)
+(match (Item.find-page &db "id ASC" 10 0)
+  (Result.Success page) (println* &page)
+  (Result.Error e) (IO.errorln &e))
+
+; Paginated: page 2
+(match (Item.find-page &db "id ASC" 10 10)
+  (Result.Success page) (println* &page)
+  (Result.Error e) (IO.errorln &e))
+
+; Filtered + paginated
+(match (Item.find-where-page &db "done = ?1" &[(to-sqlite3 0)]
+                             "text ASC" 10 0)
+  (Result.Success page) (println* &page)
+  (Result.Error e) (IO.errorln &e))
+```
+
+`find-ordered` and `find-where-ordered` accept an ORDER BY clause as a
+string. `find-page` and `find-where-page` add LIMIT/OFFSET pagination.
+All four return `(Result (Array T) String)`.
+
 ### Updating
 
 ```clojure
@@ -168,15 +202,19 @@ is propagated.
 Given `(derive-model T Backend [pk-field Pk])`, the macro adds the
 following functions to the `T` module:
 
-| Function       | Type                                           |
-|----------------|------------------------------------------------|
-| `create-table` | `(Fn [&Backend.Db] (Result () String))`        |
-| `insert`       | `(Fn [&Backend.Db &T] (Result Int String))`    |
-| `find-all`     | `(Fn [&Backend.Db] (Result (Array T) String))` |
-| `find-by-id`   | `(Fn [&Backend.Db &Pk] (Result T String))`     |
-| `find-where`   | `(Fn [&Backend.Db (Ref String) (Ref (Array Backend.Type))] (Result (Array T) String))` |
-| `update`       | `(Fn [&Backend.Db &T] (Result () String))`     |
-| `delete-by-id` | `(Fn [&Backend.Db &Pk] (Result () String))`    |
+| Function             | Type                                           |
+|----------------------|------------------------------------------------|
+| `create-table`       | `(Fn [&Backend.Db] (Result () String))`        |
+| `insert`             | `(Fn [&Backend.Db &T] (Result Int String))`    |
+| `find-all`           | `(Fn [&Backend.Db] (Result (Array T) String))` |
+| `find-by-id`         | `(Fn [&Backend.Db &Pk] (Result T String))`     |
+| `find-where`         | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result (Array T) String))` |
+| `find-ordered`       | `(Fn [&Backend.Db &String] (Result (Array T) String))` |
+| `find-where-ordered` | `(Fn [&Backend.Db &String &(Array Backend.Type) &String] (Result (Array T) String))` |
+| `find-page`          | `(Fn [&Backend.Db &String Int Int] (Result (Array T) String))` |
+| `find-where-page`    | `(Fn [&Backend.Db &String &(Array Backend.Type) &String Int Int] (Result (Array T) String))` |
+| `update`             | `(Fn [&Backend.Db &T] (Result () String))`     |
+| `delete-by-id`       | `(Fn [&Backend.Db &Pk] (Result () String))`    |
 
 For composite-PK models (`[pk1 T1 pk2 T2 ...]`), `insert` returns
 `(Result () String)` (no rowid), and `find-by-id`/`delete-by-id` accept

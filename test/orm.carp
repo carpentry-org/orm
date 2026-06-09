@@ -577,4 +577,295 @@
       (assert-equal test
         false
         no
-        "composite PK: exists? false for non-matching sid"))))
+        "composite PK: exists? false for non-matching sid")))
+
+  ;; --- find-ordered tests ---
+
+  ;; find-ordered sorts rows by the given clause
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"cherry" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-ordered &db "text ASC"))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          3
+          (Array.length &items)
+          "find-ordered returns all rows"))
+      (ignore
+        (assert-equal test
+          "apple"
+          (Todo.text (Array.unsafe-nth &items 0))
+          "find-ordered first row is apple"))
+      (assert-equal test
+        "cherry"
+        (Todo.text (Array.unsafe-nth &items 2))
+        "find-ordered last row is cherry")))
+
+  ;; find-ordered with DESC
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"cherry" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-ordered &db "text DESC"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "cherry"
+        (Todo.text (Array.unsafe-nth &items 0))
+        "find-ordered DESC puts cherry first")))
+
+  ;; find-ordered on empty table returns empty
+  (let-do [db (fresh-db)
+           items (Result.unsafe-from-success
+             (Todo.find-ordered &db "text ASC"))]
+    (SQLite3.close db)
+    (assert-equal test
+      0
+      (Array.length &items)
+      "find-ordered on empty table returns empty array"))
+
+  ;; find-ordered with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 3 103 @"C")))
+    (let-do [items (Result.unsafe-from-success
+               (Enrollment.find-ordered &db "grade ASC"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "A"
+        (Enrollment.grade (Array.unsafe-nth &items 0))
+        "composite PK: find-ordered sorts by grade")))
+
+  ;; --- find-where-ordered tests ---
+
+  ;; find-where-ordered filters and sorts
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"cherry" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-where-ordered &db
+                                        "done = ?1"
+                                        &[(to-sqlite3 0)]
+                                        "text ASC"))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          2
+          (Array.length &items)
+          "find-where-ordered returns only matching rows"))
+      (assert-equal test
+        "banana"
+        (Todo.text (Array.unsafe-nth &items 0))
+        "find-where-ordered sorts filtered results")))
+
+  ;; find-where-ordered returns empty when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [items (Result.unsafe-from-success
+               (Todo.find-where-ordered &db
+                                        "text = ?1"
+                                        &[(to-sqlite3 @"nonexistent")]
+                                        "text ASC"))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &items)
+        "find-where-ordered returns empty when no match")))
+
+  ;; --- find-page tests ---
+
+  ;; find-page returns a page of sorted rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"cherry" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"date" true))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-page &db "text ASC" 2 0))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          2
+          (Array.length &page)
+          "find-page returns limit rows"))
+      (ignore
+        (assert-equal test
+          "apple"
+          (Todo.text (Array.unsafe-nth &page 0))
+          "find-page first page starts at apple"))
+      (assert-equal test
+        "banana"
+        (Todo.text (Array.unsafe-nth &page 1))
+        "find-page first page ends at banana")))
+
+  ;; find-page with offset skips rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"cherry" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"date" true))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-page &db "text ASC" 2 2))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          2
+          (Array.length &page)
+          "find-page second page has 2 rows"))
+      (assert-equal test
+        "cherry"
+        (Todo.text (Array.unsafe-nth &page 0))
+        "find-page second page starts at cherry")))
+
+  ;; find-page past end returns fewer rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"apple" false))
+    (ignore (insert-todo &db @"banana" true))
+    (ignore (insert-todo &db @"cherry" false))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-page &db "text ASC" 2 2))]
+      (SQLite3.close db)
+      (assert-equal test
+        1
+        (Array.length &page)
+        "find-page past end returns remaining rows")))
+
+  ;; find-page with offset past all rows returns empty
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-page &db "id ASC" 10 100))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &page)
+        "find-page with large offset returns empty")))
+
+  ;; find-page with limit 0 returns empty
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-page &db "id ASC" 0 0))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &page)
+        "find-page with limit 0 returns empty")))
+
+  ;; find-page with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 3 103 @"C")))
+    (let-do [page (Result.unsafe-from-success
+               (Enrollment.find-page &db "grade ASC" 2 0))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          2
+          (Array.length &page)
+          "composite PK: find-page returns limit rows"))
+      (assert-equal test
+        "A"
+        (Enrollment.grade (Array.unsafe-nth &page 0))
+        "composite PK: find-page sorts correctly")))
+
+  ;; --- find-where-page tests ---
+
+  ;; find-where-page filters, sorts, and paginates
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"cherry" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"date" false))
+    (ignore (insert-todo &db @"elderberry" true))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-where-page &db
+                                     "done = ?1"
+                                     &[(to-sqlite3 0)]
+                                     "text ASC"
+                                     2
+                                     0))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          2
+          (Array.length &page)
+          "find-where-page returns limit rows"))
+      (ignore
+        (assert-equal test
+          "banana"
+          (Todo.text (Array.unsafe-nth &page 0))
+          "find-where-page first page starts correctly"))
+      (assert-equal test
+        "cherry"
+        (Todo.text (Array.unsafe-nth &page 1))
+        "find-where-page first page ends correctly")))
+
+  ;; find-where-page second page
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"cherry" false))
+    (ignore (insert-todo &db @"apple" true))
+    (ignore (insert-todo &db @"banana" false))
+    (ignore (insert-todo &db @"date" false))
+    (ignore (insert-todo &db @"elderberry" true))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-where-page &db
+                                     "done = ?1"
+                                     &[(to-sqlite3 0)]
+                                     "text ASC"
+                                     2
+                                     2))]
+      (SQLite3.close db)
+      (assert-equal test
+        1
+        (Array.length &page)
+        "find-where-page second page has remaining row")))
+
+  ;; find-where-page returns empty when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (let-do [page (Result.unsafe-from-success
+               (Todo.find-where-page &db
+                                     "text = ?1"
+                                     &[(to-sqlite3 @"nonexistent")]
+                                     "text ASC"
+                                     10
+                                     0))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &page)
+        "find-where-page returns empty when no match")))
+
+  ;; find-where-page with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"C")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"D")))
+    (let-do [page (Result.unsafe-from-success
+               (Enrollment.find-where-page &db
+                                           "sid = ?1"
+                                           &[(to-sqlite3 1)]
+                                           "grade ASC"
+                                           1
+                                           0))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          1
+          (Array.length &page)
+          "composite PK: find-where-page limits correctly"))
+      (assert-equal test
+        "A"
+        (Enrollment.grade (Array.unsafe-nth &page 0))
+        "composite PK: find-where-page sorts and filters"))))
