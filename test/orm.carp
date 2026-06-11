@@ -586,8 +586,7 @@
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"apple" true))
     (ignore (insert-todo &db @"cherry" false))
-    (let-do [items (Result.unsafe-from-success
-               (Todo.find-ordered &db "text ASC"))]
+    (let-do [items (Result.unsafe-from-success (Todo.find-ordered &db "text ASC"))]
       (SQLite3.close db)
       (ignore
         (assert-equal test
@@ -609,8 +608,8 @@
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"apple" true))
     (ignore (insert-todo &db @"cherry" false))
-    (let-do [items (Result.unsafe-from-success
-               (Todo.find-ordered &db "text DESC"))]
+    (let-do [items (Result.unsafe-from-success (Todo.find-ordered &db
+                                                                  "text DESC"))]
       (SQLite3.close db)
       (assert-equal test
         "cherry"
@@ -619,8 +618,7 @@
 
   ;; find-ordered on empty table returns empty
   (let-do [db (fresh-db)
-           items (Result.unsafe-from-success
-             (Todo.find-ordered &db "text ASC"))]
+           items (Result.unsafe-from-success (Todo.find-ordered &db "text ASC"))]
     (SQLite3.close db)
     (assert-equal test
       0
@@ -686,14 +684,10 @@
     (ignore (insert-todo &db @"apple" true))
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"date" true))
-    (let-do [page (Result.unsafe-from-success
-               (Todo.find-page &db "text ASC" 2 0))]
+    (let-do [page (Result.unsafe-from-success (Todo.find-page &db "text ASC" 2 0))]
       (SQLite3.close db)
       (ignore
-        (assert-equal test
-          2
-          (Array.length &page)
-          "find-page returns limit rows"))
+        (assert-equal test 2 (Array.length &page) "find-page returns limit rows"))
       (ignore
         (assert-equal test
           "apple"
@@ -710,8 +704,7 @@
     (ignore (insert-todo &db @"apple" true))
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"date" true))
-    (let-do [page (Result.unsafe-from-success
-               (Todo.find-page &db "text ASC" 2 2))]
+    (let-do [page (Result.unsafe-from-success (Todo.find-page &db "text ASC" 2 2))]
       (SQLite3.close db)
       (ignore
         (assert-equal test
@@ -728,8 +721,7 @@
     (ignore (insert-todo &db @"apple" false))
     (ignore (insert-todo &db @"banana" true))
     (ignore (insert-todo &db @"cherry" false))
-    (let-do [page (Result.unsafe-from-success
-               (Todo.find-page &db "text ASC" 2 2))]
+    (let-do [page (Result.unsafe-from-success (Todo.find-page &db "text ASC" 2 2))]
       (SQLite3.close db)
       (assert-equal test
         1
@@ -739,8 +731,10 @@
   ;; find-page with offset past all rows returns empty
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
-    (let-do [page (Result.unsafe-from-success
-               (Todo.find-page &db "id ASC" 10 100))]
+    (let-do [page (Result.unsafe-from-success (Todo.find-page &db
+                                                              "id ASC"
+                                                              10
+                                                              100))]
       (SQLite3.close db)
       (assert-equal test
         0
@@ -750,8 +744,7 @@
   ;; find-page with limit 0 returns empty
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
-    (let-do [page (Result.unsafe-from-success
-               (Todo.find-page &db "id ASC" 0 0))]
+    (let-do [page (Result.unsafe-from-success (Todo.find-page &db "id ASC" 0 0))]
       (SQLite3.close db)
       (assert-equal test
         0
@@ -868,4 +861,106 @@
       (assert-equal test
         "A"
         (Enrollment.grade (Array.unsafe-nth &page 0))
-        "composite PK: find-where-page sorts and filters"))))
+        "composite PK: find-where-page sorts and filters")))
+
+  ;; --- batch-insert tests ---
+
+  ;; batch-insert with empty array returns success
+  (let-do [db (fresh-db)
+           res (Todo.batch-insert &db &[])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "batch-insert with empty array returns success"))
+
+  ;; batch-insert with empty array leaves table unchanged
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"existing" false))
+    (ignore (Todo.batch-insert &db &[]))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "batch-insert empty array leaves table unchanged")))
+
+  ;; batch-insert inserts multiple rows
+  (let-do [db (fresh-db)
+           items [(Todo.init 0 @"buy milk" false)
+                  (Todo.init 0 @"write carp" true)
+                  (Todo.init 0 @"wash dishes" false)]
+           res (Todo.batch-insert &db &items)]
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (ignore
+        (assert-true test
+          (match res (Result.Success _) true (Result.Error _) false)
+          "batch-insert returns success"))
+      (assert-equal test 3 n "batch-insert inserts all rows")))
+
+  ;; batch-insert data is retrievable
+  (let-do [db (fresh-db)
+           items [(Todo.init 0 @"alpha" false) (Todo.init 0 @"beta" true)]]
+    (ignore (Todo.batch-insert &db &items))
+    (let-do [rows (Result.unsafe-from-success (Todo.find-ordered &db "text ASC"))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "alpha"
+          (Todo.text (Array.unsafe-nth &rows 0))
+          "batch-insert first row text"))
+      (ignore
+        (assert-equal test
+          false
+          @(Todo.done (Array.unsafe-nth &rows 0))
+          "batch-insert first row done flag"))
+      (ignore
+        (assert-equal test
+          "beta"
+          (Todo.text (Array.unsafe-nth &rows 1))
+          "batch-insert second row text"))
+      (assert-equal test
+        true
+        @(Todo.done (Array.unsafe-nth &rows 1))
+        "batch-insert second row done flag")))
+
+  ;; batch-insert single row
+  (let-do [db (fresh-db)
+           items [(Todo.init 0 @"solo" true)]]
+    (ignore (Todo.batch-insert &db &items))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "batch-insert single row works")))
+
+  ;; batch-insert on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           items [(Todo.init 0 @"fail" false)]
+           res (Todo.batch-insert &db &items)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "batch-insert on missing table returns error"))
+
+  ;; batch-insert with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (let-do [items [(Enrollment.init 1 101 @"A")
+                    (Enrollment.init 2 102 @"B+")
+                    (Enrollment.init 3 103 @"C")]
+             res (Enrollment.batch-insert &db &items)]
+      (let-do [n (Result.unsafe-from-success (Enrollment.count &db))]
+        (SQLite3.close db)
+        (ignore
+          (assert-true test
+            (match res (Result.Success _) true (Result.Error _) false)
+            "composite PK: batch-insert returns success"))
+        (assert-equal test 3 n "composite PK: batch-insert inserts all rows"))))
+
+  ;; batch-insert composite PK data is retrievable
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (let-do [items [(Enrollment.init 1 101 @"A") (Enrollment.init 2 102 @"B+")]]
+      (ignore (Enrollment.batch-insert &db &items))
+      (let-do [e (Result.unsafe-from-success (Enrollment.find-by-id &db &2 &102))]
+        (SQLite3.close db)
+        (assert-equal test
+          "B+"
+          (Enrollment.grade &e)
+          "composite PK: batch-insert data is retrievable")))))
