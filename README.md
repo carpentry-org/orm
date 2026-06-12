@@ -164,6 +164,30 @@ supported, so the typical pattern is `find-by-id` then mutate then
 (ignore (Item.delete-by-id &db &1))
 ```
 
+### Aggregates
+
+```clojure
+; Sum of a numeric column
+(match (Item.sum &db "id")
+  (Result.Success total) (println* total)
+  (Result.Error e) (IO.errorln &e))
+
+; Average with a WHERE clause
+(match (Item.avg-where &db "id" "done = ?1" &[(to-sqlite3 0)])
+  (Result.Success average) (println* average)
+  (Result.Error e) (IO.errorln &e))
+
+; Min and max
+(ignore (Item.min-val &db "id"))
+(ignore (Item.max-val &db "id"))
+```
+
+`sum`, `avg`, `min-val`, and `max-val` take a column name and return
+`(Result Double String)`. Each has a `-where` variant that accepts a
+WHERE clause and bound parameters. Results are always returned as
+`Double`, even for integer columns. Empty tables or unmatched WHERE
+clauses return 0.0.
+
 ### Transactions
 
 The ORM provides transaction support through macros that work with any
@@ -215,6 +239,14 @@ following functions to the `T` module:
 | `find-where-page`    | `(Fn [&Backend.Db &String &(Array Backend.Type) &String Int Int] (Result (Array T) String))` |
 | `update`             | `(Fn [&Backend.Db &T] (Result () String))`     |
 | `delete-by-id`       | `(Fn [&Backend.Db &Pk] (Result () String))`    |
+| `sum`                | `(Fn [&Backend.Db &String] (Result Double String))` |
+| `sum-where`          | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
+| `avg`                | `(Fn [&Backend.Db &String] (Result Double String))` |
+| `avg-where`          | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
+| `min-val`            | `(Fn [&Backend.Db &String] (Result Double String))` |
+| `min-val-where`      | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
+| `max-val`            | `(Fn [&Backend.Db &String] (Result Double String))` |
+| `max-val-where`      | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
 
 For composite-PK models (`[pk1 T1 pk2 T2 ...]`), `insert` returns
 `(Result () String)` (no rowid), and `find-by-id`/`delete-by-id` accept

@@ -200,7 +200,24 @@ any database with a backend.
               (ORM.extract-for backend
                                (cadr m)
                                (Symbol.from (String.concat ["c" (str i)]))))
-            mems))))
+            mems)))
+
+  ; Build a match/extract body for an aggregate query returning Double.
+  (hidden agg-extract-body)
+  (defndynamic agg-extract-body [query-sym backend sql-expr params-expr]
+    (list 'match
+          (list query-sym 'db sql-expr params-expr)
+          '(Result.Error e)
+          '(Result.Error e)
+          '(Result.Success rows)
+          (list 'if
+                '(= (Array.length &rows) 0)
+                '(Result.Error @"no rows returned")
+                (list 'let-do
+                      [(Symbol.from "c0")
+                       '(copy (Array.unsafe-nth (Array.unsafe-nth &rows 0) 0))]
+                      (list 'Result.Success
+                            (ORM.extract-for backend 'Double (Symbol.from "c0"))))))))
 
 ; ---------------------------------------------------------------------------
 ; The macro
@@ -225,6 +242,11 @@ deletes.
 `find-ordered` and `find-where-ordered` accept an ORDER BY clause
 (e.g. `\"text ASC\"`). `find-page` and `find-where-page` add
 LIMIT/OFFSET pagination on top of ordering.
+
+`sum`, `avg`, `min-val`, and `max-val` return aggregate values
+for a named numeric column as `(Result Double String)`.
+Each has a `-where` variant that accepts a WHERE clause and
+bound parameters.
 
 The generated functions live in the type's module.")
 (defmacro derive-model [name backend pk-fields]
@@ -280,6 +302,13 @@ The generated functions live in the type's module.")
         count-sql (String.concat ["SELECT COUNT(*) FROM " table-name])
         count-where-prefix (String.concat
           ["SELECT COUNT(*) FROM " table-name " WHERE "])
+        sum-agg-prefix "SELECT CAST(SUM("
+        avg-agg-prefix "SELECT CAST(AVG("
+        min-agg-prefix "SELECT CAST(MIN("
+        max-agg-prefix "SELECT CAST(MAX("
+        agg-col-suffix (String.concat [") AS REAL) FROM " table-name])
+        agg-col-where-suffix (String.concat
+          [") AS REAL) FROM " table-name " WHERE "])
         select-by-pk-sql (String.concat
           ["SELECT "
            all-names
@@ -553,6 +582,170 @@ the database.")
                                                     (ORM.extract-for backend
                                                                      'Int
                                                                      (Symbol.from "c0"))))))))
+
+                ; sum: returns the sum of a numeric column as Double
+                (list 'doc
+                      'sum
+                      "returns the sum of a numeric column as a Double.
+
+`col` is the column name (e.g. `\"score\"`). Returns 0.0 for
+empty tables or NULL values.")
+                (list 'defn
+                      'sum
+                      ['db 'col]
+                      (list 'let
+                            ['s1
+                             (list 'String.append sum-agg-prefix 'col)
+                             'sql
+                             (list 'String.append '&s1 agg-col-suffix)]
+                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+
+                ; sum-where: returns the sum matching a WHERE clause
+                (list 'doc
+                      'sum-where
+                      "returns the sum of a numeric column matching a SQL
+WHERE clause.
+
+`col` is the column name (e.g. `\"score\"`),
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'sum-where
+                      ['db 'col 'where-clause 'params]
+                      (list 'let
+                            ['s1
+                             (list 'String.append sum-agg-prefix 'col)
+                             's2
+                             (list 'String.append '&s1 agg-col-where-suffix)
+                             'sql
+                             (list 'String.append '&s2 'where-clause)]
+                            (ORM.agg-extract-body query-sym
+                                                  backend
+                                                  '&sql
+                                                  'params)))
+
+                ; avg: returns the average of a numeric column as Double
+                (list 'doc
+                      'avg
+                      "returns the average of a numeric column as a Double.
+
+`col` is the column name (e.g. `\"score\"`). Returns 0.0 for
+empty tables or NULL values.")
+                (list 'defn
+                      'avg
+                      ['db 'col]
+                      (list 'let
+                            ['s1
+                             (list 'String.append avg-agg-prefix 'col)
+                             'sql
+                             (list 'String.append '&s1 agg-col-suffix)]
+                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+
+                ; avg-where: returns the average matching a WHERE clause
+                (list 'doc
+                      'avg-where
+                      "returns the average of a numeric column matching a SQL
+WHERE clause.
+
+`col` is the column name (e.g. `\"score\"`),
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'avg-where
+                      ['db 'col 'where-clause 'params]
+                      (list 'let
+                            ['s1
+                             (list 'String.append avg-agg-prefix 'col)
+                             's2
+                             (list 'String.append '&s1 agg-col-where-suffix)
+                             'sql
+                             (list 'String.append '&s2 'where-clause)]
+                            (ORM.agg-extract-body query-sym
+                                                  backend
+                                                  '&sql
+                                                  'params)))
+
+                ; min-val: returns the minimum of a numeric column as Double
+                (list 'doc
+                      'min-val
+                      "returns the minimum of a numeric column as a Double.
+
+`col` is the column name (e.g. `\"score\"`). Returns 0.0 for
+empty tables or NULL values.")
+                (list 'defn
+                      'min-val
+                      ['db 'col]
+                      (list 'let
+                            ['s1
+                             (list 'String.append min-agg-prefix 'col)
+                             'sql
+                             (list 'String.append '&s1 agg-col-suffix)]
+                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+
+                ; min-val-where: returns the minimum matching a WHERE clause
+                (list 'doc
+                      'min-val-where
+                      "returns the minimum of a numeric column matching a SQL
+WHERE clause.
+
+`col` is the column name (e.g. `\"score\"`),
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'min-val-where
+                      ['db 'col 'where-clause 'params]
+                      (list 'let
+                            ['s1
+                             (list 'String.append min-agg-prefix 'col)
+                             's2
+                             (list 'String.append '&s1 agg-col-where-suffix)
+                             'sql
+                             (list 'String.append '&s2 'where-clause)]
+                            (ORM.agg-extract-body query-sym
+                                                  backend
+                                                  '&sql
+                                                  'params)))
+
+                ; max-val: returns the maximum of a numeric column as Double
+                (list 'doc
+                      'max-val
+                      "returns the maximum of a numeric column as a Double.
+
+`col` is the column name (e.g. `\"score\"`). Returns 0.0 for
+empty tables or NULL values.")
+                (list 'defn
+                      'max-val
+                      ['db 'col]
+                      (list 'let
+                            ['s1
+                             (list 'String.append max-agg-prefix 'col)
+                             'sql
+                             (list 'String.append '&s1 agg-col-suffix)]
+                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+
+                ; max-val-where: returns the maximum matching a WHERE clause
+                (list 'doc
+                      'max-val-where
+                      "returns the maximum of a numeric column matching a SQL
+WHERE clause.
+
+`col` is the column name (e.g. `\"score\"`),
+`where-clause` is a SQL fragment (e.g. `\"done = ?1\"`) and
+`params` is a ref to an array of bound parameters.")
+                (list 'defn
+                      'max-val-where
+                      ['db 'col 'where-clause 'params]
+                      (list 'let
+                            ['s1
+                             (list 'String.append max-agg-prefix 'col)
+                             's2
+                             (list 'String.append '&s1 agg-col-where-suffix)
+                             'sql
+                             (list 'String.append '&s2 'where-clause)]
+                            (ORM.agg-extract-body query-sym
+                                                  backend
+                                                  '&sql
+                                                  'params)))
 
                 ; find-by-id: looks up a row by its primary key(s)
                 (list 'defn
