@@ -218,6 +218,10 @@ all fields and returns `(Result () String)`. `batch-insert` inserts
 multiple rows in a single SQL statement and returns `(Result () String)`.
 `find-by-id` and `delete-by-id` accept one argument per PK field.
 
+`update-where` performs parameterized bulk updates with a SQL SET
+clause and WHERE clause. `delete-where` performs parameterized bulk
+deletes.
+
 `find-ordered` and `find-where-ordered` accept an ORDER BY clause
 (e.g. `\"text ASC\"`). `find-page` and `find-where-page` add
 LIMIT/OFFSET pagination on top of ordering.
@@ -296,6 +300,7 @@ The generated functions live in the type's module.")
            " WHERE "
            (ORM.sql-where-eq backend pk-mems (+ n-data 1) " AND ")])
         delete-where-prefix (String.concat ["DELETE FROM " table-name " WHERE "])
+        update-where-prefix (String.concat ["UPDATE " table-name " SET "])
         select-first-sql (String.concat [select-all-sql " LIMIT 1"])
         last-id-sql (ORM.backend-call backend 'last-insert-id-sql (list))
         query-sym (ORM.backend-call backend 'query-fn (list))
@@ -616,6 +621,34 @@ the database.")
                              (list 'String.append
                                    delete-where-prefix
                                    'where-clause)]
+                            (list 'match
+                                  (list query-sym 'db '&sql 'params)
+                                  '(Result.Success _)
+                                  '(Result.Success ())
+                                  '(Result.Error e)
+                                  '(Result.Error e))))
+
+                ; update-where: updates rows matching a WHERE clause
+                (list 'doc
+                      'update-where
+                      "updates rows matching a SQL WHERE clause.
+
+`set-clause` is a SQL SET fragment (e.g. `\"done = ?1\"`) and
+`where-clause` is a SQL WHERE fragment (e.g. `\"text = ?2\"`) and
+`params` is a ref to an array of bound parameters covering
+both clauses.")
+                (list 'defn
+                      'update-where
+                      ['db 'set-clause 'where-clause 'params]
+                      (list 'let
+                            ['base
+                             (list 'String.append
+                                   update-where-prefix
+                                   'set-clause)
+                             's1
+                             (list 'String.append '&base " WHERE ")
+                             'sql
+                             (list 'String.append '&s1 'where-clause)]
                             (list 'match
                                   (list query-sym 'db '&sql 'params)
                                   '(Result.Success _)

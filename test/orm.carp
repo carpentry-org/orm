@@ -451,6 +451,100 @@
       (SQLite3.close db)
       (assert-equal test 1 n "composite PK: delete-where removes matching rows")))
 
+  ;; --- update-where tests ---
+
+  ;; update-where updates matching rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"buy milk" false))
+    (ignore (insert-todo &db @"write carp" true))
+    (ignore (insert-todo &db @"wash dishes" false))
+    (ignore
+      (Todo.update-where &db
+                         "done = ?1"
+                         "done = ?2"
+                         &[(to-sqlite3 1) (to-sqlite3 0)]))
+    (let-do [items (Result.unsafe-from-success (Todo.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        0
+        (Array.length &(Array.copy-filter &(fn [t] (not @(Todo.done t))) &items))
+        "update-where sets all not-done to done")))
+
+  ;; update-where with no matches is a no-op
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (ignore
+      (Todo.update-where &db
+                         "done = ?1"
+                         "text = ?2"
+                         &[(to-sqlite3 1) (to-sqlite3 @"nonexistent")]))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (assert-equal test
+        false
+        @(Todo.done &t)
+        "update-where with no matches is a no-op")))
+
+  ;; update-where can set multiple columns
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"old text" false))
+    (ignore
+      (Todo.update-where &db
+                         "text = ?1, done = ?2"
+                         "id = ?3"
+                         &[(to-sqlite3 @"new text")
+                           (to-sqlite3 1)
+                           (to-sqlite3 1)]))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "new text"
+          (Todo.text &t)
+          "update-where sets text column"))
+      (assert-equal test true @(Todo.done &t) "update-where sets done column")))
+
+  ;; update-where on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.update-where &db
+                                  "done = ?1"
+                                  "id = ?2"
+                                  &[(to-sqlite3 1) (to-sqlite3 1)])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "update-where on missing table returns error"))
+
+  ;; update-where with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"C")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 101 @"D")))
+    (ignore
+      (Enrollment.update-where &db
+                               "grade = ?1"
+                               "sid = ?2"
+                               &[(to-sqlite3 @"A+") (to-sqlite3 1)]))
+    (let-do [e1 (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &101))
+             e2 (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &102))
+             e3 (Result.unsafe-from-success (Enrollment.find-by-id &db &2 &101))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "A+"
+          (Enrollment.grade &e1)
+          "composite PK: update-where updates first matching row"))
+      (ignore
+        (assert-equal test
+          "A+"
+          (Enrollment.grade &e2)
+          "composite PK: update-where updates second matching row"))
+      (assert-equal test
+        "D"
+        (Enrollment.grade &e3)
+        "composite PK: update-where leaves non-matching row")))
+
   ;; --- find-first tests ---
 
   ;; find-first returns a row from a non-empty table
