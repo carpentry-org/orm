@@ -1057,4 +1057,239 @@
         (assert-equal test
           "B+"
           (Enrollment.grade &e)
-          "composite PK: batch-insert data is retrievable")))))
+          "composite PK: batch-insert data is retrievable"))))
+
+  ;; --- sum tests ---
+
+  ;; sum returns 0.0 on empty table
+  (let-do [db (fresh-db)
+           s (Result.unsafe-from-success (Todo.sum &db "id"))]
+    (SQLite3.close db)
+    (assert-equal test 0.0 s "sum returns 0.0 on empty table"))
+
+  ;; sum returns correct total for integer column
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (ignore (insert-todo &db @"b" true))
+    (ignore (insert-todo &db @"c" false))
+    (let-do [s (Result.unsafe-from-success (Todo.sum &db "id"))]
+      (SQLite3.close db)
+      (assert-equal test 6.0 s "sum returns correct total for integer column")))
+
+  ;; sum returns correct total for double column
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.5 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 2.5 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 3.0 false)))
+    (let-do [s (Result.unsafe-from-success (Note.sum &db "score"))]
+      (SQLite3.close db)
+      (assert-equal test 7.0 s "sum returns correct total for double column")))
+
+  ;; sum with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 102 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 3 103 @"C")))
+    (let-do [s (Result.unsafe-from-success (Enrollment.sum &db "sid"))]
+      (SQLite3.close db)
+      (assert-equal test 6.0 s "composite PK: sum returns correct total")))
+
+  ;; --- sum-where tests ---
+
+  ;; sum-where returns filtered sum
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (ignore (insert-todo &db @"b" true))
+    (ignore (insert-todo &db @"c" false))
+    (let-do [s (Result.unsafe-from-success
+               (Todo.sum-where &db "id" "done = ?1" &[(to-sqlite3 0)]))]
+      (SQLite3.close db)
+      (assert-equal test 4.0 s "sum-where returns filtered sum")))
+
+  ;; sum-where returns 0.0 when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (let-do [s (Result.unsafe-from-success
+               (Todo.sum-where &db
+                               "id"
+                               "text = ?1"
+                               &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test 0.0 s "sum-where returns 0.0 when no match")))
+
+  ;; --- avg tests ---
+
+  ;; avg returns 0.0 on empty table
+  (let-do [db (fresh-db)
+           a (Result.unsafe-from-success (Todo.avg &db "id"))]
+    (SQLite3.close db)
+    (assert-equal test 0.0 a "avg returns 0.0 on empty table"))
+
+  ;; avg returns correct average
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 2.0 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 4.0 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 6.0 false)))
+    (let-do [a (Result.unsafe-from-success (Note.avg &db "score"))]
+      (SQLite3.close db)
+      (assert-equal test 4.0 a "avg returns correct average")))
+
+  ;; avg on integer column
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (ignore (insert-todo &db @"b" true))
+    (ignore (insert-todo &db @"c" false))
+    (let-do [a (Result.unsafe-from-success (Todo.avg &db "id"))]
+      (SQLite3.close db)
+      (assert-equal test 2.0 a "avg returns correct average for integer column")))
+
+  ;; --- avg-where tests ---
+
+  ;; avg-where returns filtered average
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 2.0 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 4.0 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 6.0 true)))
+    (let-do [a (Result.unsafe-from-success
+               (Note.avg-where &db "score" "pinned = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-equal test 4.0 a "avg-where returns filtered average")))
+
+  ;; avg-where returns 0.0 when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (let-do [a (Result.unsafe-from-success
+               (Todo.avg-where &db
+                               "id"
+                               "text = ?1"
+                               &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test 0.0 a "avg-where returns 0.0 when no match")))
+
+  ;; --- min-val tests ---
+
+  ;; min-val returns 0.0 on empty table
+  (let-do [db (fresh-db)
+           m (Result.unsafe-from-success (Todo.min-val &db "id"))]
+    (SQLite3.close db)
+    (assert-equal test 0.0 m "min-val returns 0.0 on empty table"))
+
+  ;; min-val returns minimum value
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 3.14 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 1.5 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 2.7 false)))
+    (let-do [m (Result.unsafe-from-success (Note.min-val &db "score"))]
+      (SQLite3.close db)
+      (assert-equal test 1.5 m "min-val returns minimum value")))
+
+  ;; min-val on integer column
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (ignore (insert-todo &db @"b" true))
+    (ignore (insert-todo &db @"c" false))
+    (let-do [m (Result.unsafe-from-success (Todo.min-val &db "id"))]
+      (SQLite3.close db)
+      (assert-equal test 1.0 m "min-val returns minimum integer as double")))
+
+  ;; --- min-val-where tests ---
+
+  ;; min-val-where returns filtered minimum
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.0 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 5.0 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 3.0 false)))
+    (let-do [m (Result.unsafe-from-success
+               (Note.min-val-where &db "score" "pinned = ?1" &[(to-sqlite3 0)]))]
+      (SQLite3.close db)
+      (assert-equal test 3.0 m "min-val-where returns filtered minimum")))
+
+  ;; min-val-where returns 0.0 when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (let-do [m (Result.unsafe-from-success
+               (Todo.min-val-where &db
+                                   "id"
+                                   "text = ?1"
+                                   &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test 0.0 m "min-val-where returns 0.0 when no match")))
+
+  ;; --- max-val tests ---
+
+  ;; max-val returns 0.0 on empty table
+  (let-do [db (fresh-db)
+           m (Result.unsafe-from-success (Todo.max-val &db "id"))]
+    (SQLite3.close db)
+    (assert-equal test 0.0 m "max-val returns 0.0 on empty table"))
+
+  ;; max-val returns maximum value
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 3.14 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 1.5 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 2.7 false)))
+    (let-do [m (Result.unsafe-from-success (Note.max-val &db "score"))]
+      (SQLite3.close db)
+      (assert-equal test 3.14 m "max-val returns maximum value")))
+
+  ;; max-val on integer column
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (ignore (insert-todo &db @"b" true))
+    (ignore (insert-todo &db @"c" false))
+    (let-do [m (Result.unsafe-from-success (Todo.max-val &db "id"))]
+      (SQLite3.close db)
+      (assert-equal test 3.0 m "max-val returns maximum integer as double")))
+
+  ;; --- max-val-where tests ---
+
+  ;; max-val-where returns filtered maximum
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Note.create-table &db))
+    (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.0 true)))
+    (ignore (Note.insert &db &(Note.init 0l @"c" @"d" 5.0 false)))
+    (ignore (Note.insert &db &(Note.init 0l @"e" @"f" 3.0 false)))
+    (let-do [m (Result.unsafe-from-success
+               (Note.max-val-where &db "score" "pinned = ?1" &[(to-sqlite3 0)]))]
+      (SQLite3.close db)
+      (assert-equal test 5.0 m "max-val-where returns filtered maximum")))
+
+  ;; max-val-where returns 0.0 when no match
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"a" false))
+    (let-do [m (Result.unsafe-from-success
+               (Todo.max-val-where &db
+                                   "id"
+                                   "text = ?1"
+                                   &[(to-sqlite3 @"nonexistent")]))]
+      (SQLite3.close db)
+      (assert-equal test 0.0 m "max-val-where returns 0.0 when no match")))
+
+  ;; aggregate with composite PK - avg-where
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 2 201 @"C")))
+    (let-do [a (Result.unsafe-from-success
+               (Enrollment.avg-where &db "cid" "sid = ?1" &[(to-sqlite3 1)]))]
+      (SQLite3.close db)
+      (assert-equal test
+        101.5
+        a
+        "composite PK: avg-where returns correct average")))
+
+  ;; aggregate on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.sum &db "id")]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "sum on missing table returns error")))
