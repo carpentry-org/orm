@@ -1,3 +1,5 @@
+(load "git@github.com:carpentry-org/strbuf@0.1.0")
+
 (doc ORM "is a database-agnostic ORM for Carp.
 
 ## Installation
@@ -443,30 +445,37 @@ the database.")
                             (list 'let
                                   ['n
                                    '(Array.length rows)
-                                   'sql
-                                   (list 'copy batch-first-sql)
+                                   'buf
+                                   '(StringBuf.create)
                                    'binds
                                    '(Array.zero)]
                                   (list 'do
+                                        (list 'StringBuf.append-str
+                                              '&buf
+                                              batch-first-sql)
                                         (list 'for
                                               ['i 1 'n]
-                                              (list 'set!
-                                                    'sql
-                                                    (list 'String.append
+                                              (list 'StringBuf.append-str
+                                                    '&buf
+                                                    batch-extra-group))
+                                        (list 'let-do
+                                              ['sql '(StringBuf.to-string &buf)]
+                                              (list 'for
+                                                    ['i 0 'n]
+                                                    (list 'let
+                                                          ['row
+                                                           '(Array.unsafe-nth rows
+                                                                              i)]
+                                                          batch-push-forms))
+                                              (list 'match
+                                                    (list query-sym
+                                                          'db
                                                           '&sql
-                                                          batch-extra-group)))
-                                        (list 'for
-                                              ['i 0 'n]
-                                              (list 'let
-                                                    ['row
-                                                     '(Array.unsafe-nth rows i)]
-                                                    batch-push-forms))
-                                        (list 'match
-                                              (list query-sym 'db '&sql '&binds)
-                                              '(Result.Success _)
-                                              '(Result.Success ())
-                                              '(Result.Error e)
-                                              '(Result.Error e))))))
+                                                          '&binds)
+                                                    '(Result.Success _)
+                                                    '(Result.Success ())
+                                                    '(Result.Error e)
+                                                    '(Result.Error e)))))))
 
                 ; find-all: returns all rows as (Result (Array T) String)
                 (list 'defn
