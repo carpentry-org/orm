@@ -237,6 +237,13 @@ all fields and returns `(Result () String)`. `batch-insert` inserts
 multiple rows in a single SQL statement and returns `(Result () String)`.
 `find-by-id` and `delete-by-id` accept one argument per PK field.
 
+`drop-table` removes the table from the database (safe to call even
+if the table does not exist).
+
+`upsert` inserts a row or updates the data fields if the primary key
+already exists (INSERT ... ON CONFLICT DO UPDATE). All fields including
+the PK must be set on the row.
+
 `update-where` performs parameterized bulk updates with a SQL SET
 clause and WHERE clause. `delete-where` performs parameterized bulk
 deletes.
@@ -285,6 +292,8 @@ The generated functions live in the type's module.")
            ", PRIMARY KEY ("
            pk-name-str
            "))"])
+        drop-sql (String.concat
+          ["DROP TABLE IF EXISTS " table-name])
         insert-names (if is-composite all-names data-names)
         insert-placeholders (if is-composite
           (ORM.sql-placeholders backend all-mems 1)
@@ -366,7 +375,27 @@ The generated functions live in the type's module.")
                                                              (cadr m)
                                                              (ORM.row-accessor name
                                                                                m)))))
-                                 insert-mems))]
+                                 insert-mems))
+        upsert-set-clause (ORM.join ", "
+                            (map
+                              (fn [m]
+                                (String.concat
+                                  [(str (car m))
+                                   "=excluded."
+                                   (str (car m))]))
+                              data-mems))
+        upsert-sql (String.concat
+          ["INSERT INTO "
+           table-name
+           " ("
+           all-names
+           ") VALUES ("
+           (ORM.sql-placeholders backend all-mems 1)
+           ") ON CONFLICT ("
+           pk-name-str
+           ") DO UPDATE SET "
+           upsert-set-clause])
+        upsert-binds (ORM.bind-row-fields backend name all-mems)]
     (eval (list 'defmodule
                 name
 
@@ -376,6 +405,23 @@ The generated functions live in the type's module.")
                       ['db]
                       (list 'match
                             (list query-sym 'db create-sql '&[])
+                            '(Result.Success _)
+                            '(Result.Success ())
+                            '(Result.Error e)
+                            '(Result.Error e)))
+
+                ; drop-table: runs the DROP TABLE IF EXISTS statement
+                (list 'doc
+                      'drop-table
+                      "drops the table if it exists.
+
+Returns `(Result () String)`. Safe to call even if the table
+does not exist.")
+                (list 'defn
+                      'drop-table
+                      ['db]
+                      (list 'match
+                            (list query-sym 'db drop-sql '&[])
                             '(Result.Success _)
                             '(Result.Success ())
                             '(Result.Error e)
@@ -476,6 +522,28 @@ the database.")
                                                     '(Result.Success ())
                                                     '(Result.Error e)
                                                     '(Result.Error e)))))))
+
+                ; upsert: inserts or updates on primary key conflict
+                (list 'doc
+                      'upsert
+                      "inserts a row, or updates the data fields if the primary
+key already exists.
+
+Uses INSERT ... ON CONFLICT DO UPDATE to atomically insert or
+update in a single statement. All fields (including PK) must
+be set on the row. Returns `(Result () String)`.")
+                (list 'defn
+                      'upsert
+                      ['db 'row]
+                      (list 'match
+                            (list query-sym
+                                  'db
+                                  upsert-sql
+                                  (list 'ref upsert-binds))
+                            '(Result.Success _)
+                            '(Result.Success ())
+                            '(Result.Error e)
+                            '(Result.Error e)))
 
                 ; find-all: returns all rows as (Result (Array T) String)
                 (list 'defn
