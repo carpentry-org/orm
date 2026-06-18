@@ -1292,4 +1292,168 @@
     (SQLite3.close db)
     (assert-true test
       (match res (Result.Error _) true (Result.Success _) false)
-      "sum on missing table returns error")))
+      "sum on missing table returns error"))
+
+  ;; --- drop-table tests ---
+
+  ;; drop-table on existing table succeeds
+  (let-do [db (fresh-db)
+           res (Todo.drop-table &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "drop-table on existing table succeeds"))
+
+  ;; drop-table on non-existent table succeeds (IF EXISTS)
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.drop-table &db)]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "drop-table on non-existent table succeeds"))
+
+  ;; after drop-table, operations fail
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"task" false))
+    (ignore (Todo.drop-table &db))
+    (let-do [res (Todo.find-all &db)]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Error _) true (Result.Success _) false)
+        "after drop-table, find-all fails")))
+
+  ;; drop-table then re-create works
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"old" false))
+    (ignore (Todo.drop-table &db))
+    (ignore (Todo.create-table &db))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 0 n "drop-table then re-create gives empty table")))
+
+  ;; drop-table with composite PK
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (let-do [res (Enrollment.drop-table &db)]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Success _) true (Result.Error _) false)
+        "composite PK: drop-table succeeds")))
+
+  ;; --- upsert tests ---
+
+  ;; upsert inserts when row does not exist
+  (let-do [db (fresh-db)]
+    (ignore (Todo.upsert &db &(Todo.init 1 @"new task" false)))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "new task"
+          (Todo.text &t)
+          "upsert inserts new row text"))
+      (assert-equal test
+        false
+        @(Todo.done &t)
+        "upsert inserts new row done flag")))
+
+  ;; upsert updates when PK already exists
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"original" false))
+    (ignore (Todo.upsert &db &(Todo.init 1 @"updated" true)))
+    (let-do [t (Result.unsafe-from-success (Todo.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "updated"
+          (Todo.text &t)
+          "upsert updates existing row text"))
+      (assert-equal test
+        true
+        @(Todo.done &t)
+        "upsert updates existing row done flag")))
+
+  ;; upsert does not affect other rows
+  (let-do [db (fresh-db)]
+    (ignore (insert-todo &db @"keep" false))
+    (ignore (insert-todo &db @"change" false))
+    (ignore (Todo.upsert &db &(Todo.init 2 @"changed" true)))
+    (let-do [t1 (Result.unsafe-from-success (Todo.find-by-id &db &1))
+             t2 (Result.unsafe-from-success (Todo.find-by-id &db &2))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "keep"
+          (Todo.text &t1)
+          "upsert does not affect other rows"))
+      (assert-equal test
+        "changed"
+        (Todo.text &t2)
+        "upsert updates only the target row")))
+
+  ;; upsert returns success
+  (let-do [db (fresh-db)
+           res (Todo.upsert &db &(Todo.init 1 @"task" false))]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "upsert returns success"))
+
+  ;; upsert on missing table returns error
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))
+           res (Todo.upsert &db &(Todo.init 1 @"fail" false))]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "upsert on missing table returns error"))
+
+  ;; upsert with composite PK inserts new row
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.upsert &db &(Enrollment.init 1 101 @"A")))
+    (let-do [e (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &101))]
+      (SQLite3.close db)
+      (assert-equal test
+        "A"
+        (Enrollment.grade &e)
+        "composite PK: upsert inserts new row")))
+
+  ;; upsert with composite PK updates existing row
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
+    (ignore (Enrollment.upsert &db &(Enrollment.init 1 101 @"A+")))
+    (let-do [e (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &101))]
+      (SQLite3.close db)
+      (assert-equal test
+        "A+"
+        (Enrollment.grade &e)
+        "composite PK: upsert updates existing row")))
+
+  ;; upsert with composite PK does not affect other rows
+  (let-do [db (Result.unsafe-from-success (SQLite3.open ":memory:"))]
+    (ignore (Enrollment.create-table &db))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
+    (ignore (Enrollment.insert &db &(Enrollment.init 1 102 @"B")))
+    (ignore (Enrollment.upsert &db &(Enrollment.init 1 101 @"A+")))
+    (let-do [e1 (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &101))
+             e2 (Result.unsafe-from-success (Enrollment.find-by-id &db &1 &102))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "A+"
+          (Enrollment.grade &e1)
+          "composite PK: upsert updates target row"))
+      (assert-equal test
+        "B"
+        (Enrollment.grade &e2)
+        "composite PK: upsert leaves other row unchanged")))
+
+  ;; upsert idempotent: same data twice is a no-op
+  (let-do [db (fresh-db)]
+    (ignore (Todo.upsert &db &(Todo.init 1 @"task" false)))
+    (ignore (Todo.upsert &db &(Todo.init 1 @"task" false)))
+    (let-do [n (Result.unsafe-from-success (Todo.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "upsert same data twice produces one row"))))
