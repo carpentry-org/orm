@@ -34,10 +34,6 @@ any database with a backend.
 ")
 
 (defmodule ORM
-  ; -------------------------------------------------------------------------
-  ; Dynamic list helpers
-  ; -------------------------------------------------------------------------
-
   (hidden join)
   (defndynamic join [sep xs]
     (if (empty? xs)
@@ -50,31 +46,24 @@ any database with a backend.
 
   (hidden map-idx)
   (defndynamic map-idx [f xs]
-    (let [i 0
-          result (list)]
-      (do
-        (while (not (empty? xs))
-          (do
-            (set! result (append result (list (f i (car xs)))))
-            (set! i (+ i 1))
-            (set! xs (cdr xs))))
-        result)))
+    (let-do [i 0
+             result (list)]
+      (while-do (not (empty? xs))
+        (set! result (append result (list (f i (car xs)))))
+        (set! i (+ i 1))
+        (set! xs (cdr xs)))
+      result))
 
   (hidden member?)
   (defndynamic member? [x xs]
-    (if (empty? xs) false (if (= x (car xs)) true (ORM.member? x (cdr xs)))))
+    (cond (empty? xs) false (= x (car xs)) true (ORM.member? x (cdr xs))))
 
   (hidden without)
   (defndynamic without [mems names]
-    (if (empty? mems)
-      []
-      (if (ORM.member? (car (car mems)) names)
-        (ORM.without (cdr mems) names)
-        (cons (car mems) (ORM.without (cdr mems) names)))))
-
-  ; -------------------------------------------------------------------------
-  ; Backend dispatch: call a defndynamic on a backend module by name
-  ; -------------------------------------------------------------------------
+    (cond
+      (empty? mems) []
+      (ORM.member? (car (car mems)) names) (ORM.without (cdr mems) names)
+      (cons (car mems) (ORM.without (cdr mems) names))))
 
   (hidden backend-call)
   (defndynamic backend-call [backend fn-name args]
@@ -99,10 +88,6 @@ any database with a backend.
     (ORM.backend-call backend
                       'extract-col
                       (list (list 'quote t) (list 'quote var-sym))))
-
-  ; -------------------------------------------------------------------------
-  ; SQL fragment generation
-  ; -------------------------------------------------------------------------
 
   (hidden sql-col-defs)
   (defndynamic sql-col-defs [backend mems]
@@ -135,15 +120,9 @@ any database with a backend.
                      (ORM.placeholder-for backend (+ i offset))]))
                 mems)))
 
-  ; -------------------------------------------------------------------------
-  ; Row-accessor helpers (used to build bind expressions for INSERT/UPDATE)
-  ; -------------------------------------------------------------------------
-
-  ; `(Symbol.prefix Item text)` becomes `Item.text`, then `(Item.text row)`.
   (hidden row-accessor)
   (defndynamic row-accessor [name m] (list (Symbol.prefix name (car m)) 'row))
 
-  ; Build an array of bind expressions for a row's fields.
   (hidden bind-row-fields)
   (defndynamic bind-row-fields [backend name mems]
     (collect-into
@@ -152,19 +131,16 @@ any database with a backend.
         mems)
       array))
 
-  ; Return the parameter symbol for the i-th PK field.
   ; Single-PK models use `pk`; composite-PK models use `pk0`, `pk1`, ...
   (hidden pk-param-sym)
   (defndynamic pk-param-sym [n-pks i]
     (if (= 1 n-pks) 'pk (Symbol.from (String.concat ["pk" (str i)]))))
 
-  ; Return a list of parameter symbols for all PK fields.
   (hidden pk-param-syms)
   (defndynamic pk-param-syms [pk-mems]
     (let [n (length pk-mems)]
       (ORM.map-idx (fn [i _] (ORM.pk-param-sym n i)) pk-mems)))
 
-  ; Build an array of bind expressions for PK parameters of find/delete.
   (hidden bind-pk-args)
   (defndynamic bind-pk-args [backend pk-mems]
     (let [n (length pk-mems)]
@@ -174,12 +150,7 @@ any database with a backend.
           pk-mems)
         array)))
 
-  ; -------------------------------------------------------------------------
-  ; Row-extraction helpers (used by find-all / find-by-id)
-  ; -------------------------------------------------------------------------
-
-  ; Generates a let-binding array that copies each column of `cols-form`
-  ; into local variables `c0`, `c1`, ... so the borrow checker is happy.
+  ; Columns are copied into locals `c0`, `c1`, ... to satisfy the borrow checker.
   (hidden row-let-bindings)
   (defndynamic row-let-bindings [mems cols-form]
     (collect-into
@@ -193,7 +164,6 @@ any database with a backend.
                 mems))
       array))
 
-  ; Generates `(Type.init (extract c0) (extract c1) ...)`
   (hidden init-call-from-cols)
   (defndynamic init-call-from-cols [backend name mems]
     (cons (Symbol.prefix name 'init)
@@ -204,7 +174,6 @@ any database with a backend.
                                (Symbol.from (String.concat ["c" (str i)]))))
             mems)))
 
-  ; Build a match/extract body for an aggregate query returning Double.
   (hidden agg-extract-body)
   (defndynamic agg-extract-body [query-sym backend sql-expr params-expr]
     (list 'match
@@ -220,10 +189,6 @@ any database with a backend.
                        '(copy (Array.unsafe-nth (Array.unsafe-nth &rows 0) 0))]
                       (list 'Result.Success
                             (ORM.extract-for backend 'Double (Symbol.from "c0"))))))))
-
-; ---------------------------------------------------------------------------
-; The macro
-; ---------------------------------------------------------------------------
 
 (doc derive-model "generates CRUD functions for a type in its own module.
 
@@ -278,7 +243,6 @@ The generated functions live in the type's module.")
                  (str name)
                  " has no non-PK fields to insert/update"]))
           ())
-        ; SQL strings
         col-defs (ORM.sql-col-defs backend all-mems)
         pk-name-str (ORM.join ", " (map str pk-names))
         all-names (ORM.sql-col-names all-mems)
@@ -292,8 +256,7 @@ The generated functions live in the type's module.")
            ", PRIMARY KEY ("
            pk-name-str
            "))"])
-        drop-sql (String.concat
-          ["DROP TABLE IF EXISTS " table-name])
+        drop-sql (String.concat ["DROP TABLE IF EXISTS " table-name])
         insert-names (if is-composite all-names data-names)
         insert-placeholders (if is-composite
           (ORM.sql-placeholders backend all-mems 1)
@@ -344,7 +307,6 @@ The generated functions live in the type's module.")
         select-first-sql (String.concat [select-all-sql " LIMIT 1"])
         last-id-sql (ORM.backend-call backend 'last-insert-id-sql (list))
         query-sym (ORM.backend-call backend 'query-fn (list))
-        ; Re-usable bind arrays
         insert-mems (if is-composite all-mems data-mems)
         insert-binds (ORM.bind-row-fields backend name insert-mems)
         update-binds (collect-into
@@ -358,7 +320,6 @@ The generated functions live in the type's module.")
           array)
         pk-params (ORM.pk-param-syms pk-mems)
         pk-binds (ORM.bind-pk-args backend pk-mems)
-        ; batch-insert SQL fragments (use positional ? placeholders)
         batch-group (String.concat
           ["(" (ORM.join ", " (map (fn [_] "?") insert-mems)) ")"])
         batch-first-sql (String.concat
@@ -377,13 +338,13 @@ The generated functions live in the type's module.")
                                                                                m)))))
                                  insert-mems))
         upsert-set-clause (ORM.join ", "
-                            (map
-                              (fn [m]
-                                (String.concat
-                                  [(str (car m))
-                                   "=excluded."
-                                   (str (car m))]))
-                              data-mems))
+                                    (map
+                                      (fn [m]
+                                        (String.concat
+                                          [(str (car m))
+                                           "=excluded."
+                                           (str (car m))]))
+                                      data-mems))
         upsert-sql (String.concat
           ["INSERT INTO "
            table-name
@@ -399,7 +360,6 @@ The generated functions live in the type's module.")
     (eval (list 'defmodule
                 name
 
-                ; create-table: runs the CREATE TABLE IF NOT EXISTS statement
                 (list 'defn
                       'create-table
                       ['db]
@@ -410,10 +370,7 @@ The generated functions live in the type's module.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; drop-table: runs the DROP TABLE IF EXISTS statement
-                (list 'doc
-                      'drop-table
-                      "drops the table if it exists.
+                (list 'doc 'drop-table "drops the table if it exists.
 
 Returns `(Result () String)`. Safe to call even if the table
 does not exist.")
@@ -427,7 +384,6 @@ does not exist.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; insert: runs INSERT; returns rowid for single-PK or () for composite
                 (if is-composite
                   (list 'defn
                         'insert
@@ -471,7 +427,6 @@ does not exist.")
                                                                        'Int
                                                                        (Symbol.from "c0")))))))))
 
-                ; batch-insert: inserts multiple rows in a single SQL statement
                 (list 'doc
                       'batch-insert
                       "inserts multiple rows in a single SQL statement.
@@ -523,7 +478,6 @@ the database.")
                                                     '(Result.Error e)
                                                     '(Result.Error e)))))))
 
-                ; upsert: inserts or updates on primary key conflict
                 (list 'doc
                       'upsert
                       "inserts a row, or updates the data fields if the primary
@@ -545,7 +499,6 @@ be set on the row. Returns `(Result () String)`.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; find-all: returns all rows as (Result (Array T) String)
                 (list 'defn
                       'find-all
                       ['db]
@@ -567,7 +520,6 @@ be set on the row. Returns `(Result () String)`.")
                                                                                    all-mems))))
                                         '&rows))))
 
-                ; find-where: returns rows matching a WHERE clause
                 (list 'doc
                       'find-where
                       "returns rows matching a SQL WHERE clause.
@@ -600,7 +552,6 @@ be set on the row. Returns `(Result () String)`.")
                                                                                          all-mems))))
                                               '&rows)))))
 
-                ; count: returns the number of rows as (Result Int String)
                 (list 'doc
                       'count
                       "returns the total number of rows in the table.")
@@ -626,7 +577,6 @@ be set on the row. Returns `(Result () String)`.")
                                                                'Int
                                                                (Symbol.from "c0")))))))
 
-                ; count-where: returns count of rows matching a WHERE clause
                 (list 'doc
                       'count-where
                       "returns the count of rows matching a SQL WHERE clause.
@@ -660,7 +610,6 @@ be set on the row. Returns `(Result () String)`.")
                                                                      'Int
                                                                      (Symbol.from "c0"))))))))
 
-                ; sum: returns the sum of a numeric column as Double
                 (list 'doc
                       'sum
                       "returns the sum of a numeric column as a Double.
@@ -677,7 +626,6 @@ empty tables or NULL values.")
                              (list 'String.append '&s1 agg-col-suffix)]
                             (ORM.agg-extract-body query-sym backend '&sql '&[])))
 
-                ; sum-where: returns the sum matching a WHERE clause
                 (list 'doc
                       'sum-where
                       "returns the sum of a numeric column matching a SQL
@@ -701,7 +649,6 @@ WHERE clause.
                                                   '&sql
                                                   'params)))
 
-                ; avg: returns the average of a numeric column as Double
                 (list 'doc
                       'avg
                       "returns the average of a numeric column as a Double.
@@ -718,7 +665,6 @@ empty tables or NULL values.")
                              (list 'String.append '&s1 agg-col-suffix)]
                             (ORM.agg-extract-body query-sym backend '&sql '&[])))
 
-                ; avg-where: returns the average matching a WHERE clause
                 (list 'doc
                       'avg-where
                       "returns the average of a numeric column matching a SQL
@@ -742,7 +688,6 @@ WHERE clause.
                                                   '&sql
                                                   'params)))
 
-                ; min-val: returns the minimum of a numeric column as Double
                 (list 'doc
                       'min-val
                       "returns the minimum of a numeric column as a Double.
@@ -759,7 +704,6 @@ empty tables or NULL values.")
                              (list 'String.append '&s1 agg-col-suffix)]
                             (ORM.agg-extract-body query-sym backend '&sql '&[])))
 
-                ; min-val-where: returns the minimum matching a WHERE clause
                 (list 'doc
                       'min-val-where
                       "returns the minimum of a numeric column matching a SQL
@@ -783,7 +727,6 @@ WHERE clause.
                                                   '&sql
                                                   'params)))
 
-                ; max-val: returns the maximum of a numeric column as Double
                 (list 'doc
                       'max-val
                       "returns the maximum of a numeric column as a Double.
@@ -800,7 +743,6 @@ empty tables or NULL values.")
                              (list 'String.append '&s1 agg-col-suffix)]
                             (ORM.agg-extract-body query-sym backend '&sql '&[])))
 
-                ; max-val-where: returns the maximum matching a WHERE clause
                 (list 'doc
                       'max-val-where
                       "returns the maximum of a numeric column matching a SQL
@@ -824,7 +766,6 @@ WHERE clause.
                                                   '&sql
                                                   'params)))
 
-                ; find-by-id: looks up a row by its primary key(s)
                 (list 'defn
                       'find-by-id
                       (collect-into (cons 'db pk-params) array)
@@ -848,7 +789,6 @@ WHERE clause.
                                                                        name
                                                                        all-mems))))))
 
-                ; update: writes all data fields on a row, matched by its PK
                 (list 'defn
                       'update
                       ['db 'row]
@@ -862,7 +802,6 @@ WHERE clause.
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; delete-by-id: removes the row identified by the given PK(s)
                 (list 'defn
                       'delete-by-id
                       (collect-into (cons 'db pk-params) array)
@@ -876,7 +815,6 @@ WHERE clause.
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                ; delete-where: deletes rows matching a WHERE clause
                 (list 'doc
                       'delete-where
                       "deletes rows matching a SQL WHERE clause.
@@ -898,7 +836,6 @@ WHERE clause.
                                   '(Result.Error e)
                                   '(Result.Error e))))
 
-                ; update-where: updates rows matching a WHERE clause
                 (list 'doc
                       'update-where
                       "updates rows matching a SQL WHERE clause.
@@ -926,7 +863,6 @@ both clauses.")
                                   '(Result.Error e)
                                   '(Result.Error e))))
 
-                ; find-first: returns the first row or error if empty
                 (list 'doc
                       'find-first
                       "returns the first row from the table, or an error if
@@ -951,7 +887,6 @@ the table is empty.")
                                                                        name
                                                                        all-mems))))))
 
-                ; find-first-where: returns the first matching row
                 (list 'doc
                       'find-first-where
                       "returns the first row matching a SQL WHERE clause, or
@@ -986,7 +921,6 @@ an error if no rows match.
                                                                              name
                                                                              all-mems)))))))
 
-                ; exists?: checks if any rows match a condition
                 (list 'doc
                       'exists?
                       "returns whether any rows match a SQL WHERE clause.
@@ -1022,7 +956,6 @@ an error if no rows match.
                                                                            (Symbol.from "c0"))
                                                           0)))))))
 
-                ; find-ordered: returns all rows sorted by ORDER BY clause
                 (list 'doc
                       'find-ordered
                       "returns all rows sorted by the given ORDER BY clause.
@@ -1055,7 +988,6 @@ an error if no rows match.
                                                                                          all-mems))))
                                               '&rows)))))
 
-                ; find-where-ordered: filtered rows sorted by ORDER BY
                 (list 'doc
                       'find-where-ordered
                       "returns rows matching a SQL WHERE clause, sorted by the
@@ -1094,7 +1026,6 @@ given ORDER BY clause.
                                                                                          all-mems))))
                                               '&rows)))))
 
-                ; find-page: paginated rows with ORDER BY
                 (list 'doc
                       'find-page
                       "returns a page of rows sorted by the given ORDER BY
@@ -1137,7 +1068,6 @@ rows to skip.")
                                                                                          all-mems))))
                                               '&rows)))))
 
-                ; find-where-page: filtered paginated rows
                 (list 'doc
                       'find-where-page
                       "returns a page of rows matching a SQL WHERE clause,
@@ -1186,10 +1116,6 @@ rows to skip.")
                                                                                          name
                                                                                          all-mems))))
                                               '&rows)))))))))
-
-; ---------------------------------------------------------------------------
-; Transaction support
-; ---------------------------------------------------------------------------
 
 (defmodule ORM
   (hidden txn-stmt-form)
