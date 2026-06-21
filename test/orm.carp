@@ -32,13 +32,13 @@
 (defn insert-todo [db text done] (ok (Todo.insert db &(Todo.init 0 text done))))
 
 (deftest test
-  ;; find-all returns empty after create-table
+  ; find-all returns empty after create-table
   (let-do [db (fresh-db)
            n (Array.length &(ok (Todo.find-all &db)))]
     (SQLite3.close db)
     (assert-equal test 0 n "find-all returns 0 rows after create-table"))
 
-  ;; insert returns sequential rowids
+  ; insert returns sequential rowids
   (let-do [db (fresh-db)
            id1 (insert-todo &db @"buy milk" false)
            id2 (insert-todo &db @"write carp" true)]
@@ -46,7 +46,7 @@
     (ignore (assert-equal test 1 id1 "insert returns rowid 1 for first row"))
     (assert-equal test 2 id2 "insert returns rowid 2 for second row"))
 
-  ;; find-by-id round-trips all fields
+  ; find-by-id round-trips all fields
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (let-do [t (ok (Todo.find-by-id &db &1))]
@@ -66,7 +66,7 @@
         @(Todo.done &t)
         "find-by-id returns row with stored done flag")))
 
-  ;; update writes data fields
+  ; update writes data fields
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (ignore (Todo.update &db &(Todo.init 1 @"done task" true)))
@@ -76,7 +76,7 @@
         (assert-equal test "done task" (Todo.text &t) "update writes new text"))
       (assert-equal test true @(Todo.done &t) "update writes new done flag")))
 
-  ;; delete-by-id removes only the matching row
+  ; delete-by-id removes only the matching row
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"keep" false))
     (ignore (insert-todo &db @"remove" false))
@@ -93,7 +93,7 @@
         (Todo.text (Array.unsafe-nth &remaining 0))
         "remaining row is the one that wasn't deleted")))
 
-  ;; find-where filters by condition
+  ; find-where filters by condition
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -105,7 +105,7 @@
         (Array.length &done-items)
         "find-where returns only matching rows")))
 
-  ;; find-where with multiple conditions
+  ; find-where with multiple conditions
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -125,7 +125,7 @@
         (Todo.text (Array.unsafe-nth &items 0))
         "find-where returns correct row")))
 
-  ;; find-where returns empty when no match
+  ; find-where returns empty when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [items (ok
@@ -136,13 +136,13 @@
         (Array.length &items)
         "find-where returns empty array when no match")))
 
-  ;; count returns 0 on empty table
+  ; count returns 0 on empty table
   (let-do [db (fresh-db)
            n (ok (Todo.count &db))]
     (SQLite3.close db)
     (assert-equal test 0 n "count returns 0 on empty table"))
 
-  ;; count returns correct number after inserts
+  ; count returns correct number after inserts
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -151,7 +151,7 @@
       (SQLite3.close db)
       (assert-equal test 3 n "count returns 3 after three inserts")))
 
-  ;; count-where returns matching count
+  ; count-where returns matching count
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -160,7 +160,7 @@
       (SQLite3.close db)
       (assert-equal test 2 n "count-where returns 2 for done=false")))
 
-  ;; count-where returns 0 when no match
+  ; count-where returns 0 when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [n (ok
@@ -168,7 +168,7 @@
       (SQLite3.close db)
       (assert-equal test 0 n "count-where returns 0 when no match")))
 
-  ;; count works with composite PK model
+  ; count works with composite PK model
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -177,7 +177,7 @@
       (SQLite3.close db)
       (assert-equal test 2 n "composite PK: count returns 2")))
 
-  ;; count-where works with composite PK model
+  ; count-where works with composite PK model
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -187,7 +187,7 @@
       (SQLite3.close db)
       (assert-equal test 2 n "composite PK: count-where filters correctly")))
 
-  ;; Long / Double / Bool round-trip through a second model
+  ; Long / Double / Bool round-trip through a second model
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"title" @"body" 3.14 true)))
@@ -208,7 +208,7 @@
         @(Note.pinned &n)
         "Note.pinned round-trips as Bool")))
 
-  ;; create-table returns success
+  ; create-table returns success
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.create-table &db)]
     (SQLite3.close db)
@@ -216,7 +216,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "create-table returns Result.Success"))
 
-  ;; insert on missing table returns error
+  ; insert on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.insert &db &(Todo.init 0 @"fail" false))]
     (SQLite3.close db)
@@ -224,7 +224,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "insert on missing table returns Result.Error"))
 
-  ;; update on missing table returns error
+  ; update on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.update &db &(Todo.init 1 @"fail" true))]
     (SQLite3.close db)
@@ -232,7 +232,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "update on missing table returns Result.Error"))
 
-  ;; delete-by-id on missing table returns error
+  ; delete-by-id on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.delete-by-id &db &1)]
     (SQLite3.close db)
@@ -240,7 +240,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "delete-by-id on missing table returns Result.Error"))
 
-  ;; begin and commit preserve data
+  ; begin and commit preserve data
   (let-do [db (fresh-db)]
     (ignore (ORM.begin SQLiteBackend &db))
     (ignore (insert-todo &db @"in txn" false))
@@ -249,7 +249,7 @@
       (SQLite3.close db)
       (assert-equal test 1 (Array.length &rows) "commit preserves inserted row")))
 
-  ;; begin and rollback undo data
+  ; begin and rollback undo data
   (let-do [db (fresh-db)]
     (ignore (ORM.begin SQLiteBackend &db))
     (ignore (insert-todo &db @"will rollback" false))
@@ -258,7 +258,7 @@
       (SQLite3.close db)
       (assert-equal test 0 (Array.length &rows) "rollback undoes inserted row")))
 
-  ;; with-transaction commits on success
+  ; with-transaction commits on success
   (let-do [db (fresh-db)
            res (ORM.with-transaction SQLiteBackend
                                      &db
@@ -277,7 +277,7 @@
         (Array.length &rows)
         "with-transaction commits data on success")))
 
-  ;; with-transaction rolls back on error
+  ; with-transaction rolls back on error
   (let-do [db (fresh-db)
            res (ORM.with-transaction SQLiteBackend
                                      &db
@@ -300,7 +300,7 @@
         (Array.length &rows)
         "with-transaction rolls back on error")))
 
-  ;; with-transaction propagates the body result value
+  ; with-transaction propagates the body result value
   (let-do [db (fresh-db)
            res (ORM.with-transaction SQLiteBackend
                                      &db
@@ -312,7 +312,7 @@
       (ok res)
       "with-transaction propagates the body result value"))
 
-  ;; create-table with composite PK succeeds
+  ; create-table with composite PK succeeds
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Enrollment.create-table &db)]
     (SQLite3.close db)
@@ -320,7 +320,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "composite PK: create-table succeeds"))
 
-  ;; insert with composite PK returns ()
+  ; insert with composite PK returns ()
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (let-do [res (Enrollment.insert &db &(Enrollment.init 1 101 @"A"))]
@@ -329,7 +329,7 @@
         (match res (Result.Success _) true (Result.Error _) false)
         "composite PK: insert returns success")))
 
-  ;; find-by-id with composite PK round-trips all fields
+  ; find-by-id with composite PK round-trips all fields
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -352,7 +352,7 @@
         (Enrollment.grade &e)
         "composite PK: find-by-id returns correct grade")))
 
-  ;; find-by-id not found
+  ; find-by-id not found
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -362,7 +362,7 @@
         (match res (Result.Error _) true (Result.Success _) false)
         "composite PK: find-by-id returns error when not found")))
 
-  ;; update with composite PK
+  ; update with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -374,7 +374,7 @@
         (Enrollment.grade &e)
         "composite PK: update modifies data field")))
 
-  ;; delete-by-id with composite PK removes only the matching row
+  ; delete-by-id with composite PK removes only the matching row
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -388,7 +388,7 @@
         (Array.length &remaining)
         "composite PK: delete-by-id removes exactly one row")))
 
-  ;; find-all with composite PK returns all rows
+  ; find-all with composite PK returns all rows
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -400,7 +400,7 @@
         (Array.length &all)
         "composite PK: find-all returns all rows")))
 
-  ;; delete-where removes matching rows
+  ; delete-where removes matching rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -418,7 +418,7 @@
         (Todo.text (Array.unsafe-nth &remaining 0))
         "delete-where keeps non-matching rows")))
 
-  ;; delete-where with no matches is a no-op
+  ; delete-where with no matches is a no-op
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (ignore (Todo.delete-where &db "text = ?1" &[(to-sqlite3 @"nonexistent")]))
@@ -426,7 +426,7 @@
       (SQLite3.close db)
       (assert-equal test 1 n "delete-where with no matches is a no-op")))
 
-  ;; delete-where on missing table returns error
+  ; delete-where on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.delete-where &db "done = ?1" &[(to-sqlite3 0)])]
     (SQLite3.close db)
@@ -434,7 +434,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "delete-where on missing table returns error"))
 
-  ;; delete-where with composite PK
+  ; delete-where with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -445,7 +445,7 @@
       (SQLite3.close db)
       (assert-equal test 1 n "composite PK: delete-where removes matching rows")))
 
-  ;; update-where updates matching rows
+  ; update-where updates matching rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -462,7 +462,7 @@
         (Array.length &(Array.copy-filter &(fn [t] (not @(Todo.done t))) &items))
         "update-where sets all not-done to done")))
 
-  ;; update-where with no matches is a no-op
+  ; update-where with no matches is a no-op
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (ignore
@@ -477,7 +477,7 @@
         @(Todo.done &t)
         "update-where with no matches is a no-op")))
 
-  ;; update-where can set multiple columns
+  ; update-where can set multiple columns
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"old text" false))
     (ignore
@@ -496,7 +496,7 @@
           "update-where sets text column"))
       (assert-equal test true @(Todo.done &t) "update-where sets done column")))
 
-  ;; update-where on missing table returns error
+  ; update-where on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.update-where &db
                                   "done = ?1"
@@ -507,7 +507,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "update-where on missing table returns error"))
 
-  ;; update-where with composite PK
+  ; update-where with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -537,7 +537,7 @@
         (Enrollment.grade &e3)
         "composite PK: update-where leaves non-matching row")))
 
-  ;; find-first returns a row from a non-empty table
+  ; find-first returns a row from a non-empty table
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -545,7 +545,7 @@
       (SQLite3.close db)
       (assert-equal test "buy milk" (Todo.text &t) "find-first returns a row")))
 
-  ;; find-first returns error on empty table
+  ; find-first returns error on empty table
   (let-do [db (fresh-db)
            res (Todo.find-first &db)]
     (SQLite3.close db)
@@ -553,7 +553,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "find-first returns error on empty table"))
 
-  ;; find-first on missing table returns error
+  ; find-first on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.find-first &db)]
     (SQLite3.close db)
@@ -561,7 +561,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "find-first on missing table returns error"))
 
-  ;; find-first with composite PK
+  ; find-first with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -572,7 +572,7 @@
         (Enrollment.grade &e)
         "composite PK: find-first returns a row")))
 
-  ;; find-first-where returns the first matching row
+  ; find-first-where returns the first matching row
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -584,7 +584,7 @@
         (Todo.text &t)
         "find-first-where returns a matching row")))
 
-  ;; find-first-where returns error when no match
+  ; find-first-where returns error when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [res (Todo.find-first-where &db
@@ -595,7 +595,7 @@
         (match res (Result.Error _) true (Result.Success _) false)
         "find-first-where returns error when no match")))
 
-  ;; find-first-where with composite PK
+  ; find-first-where with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -609,7 +609,7 @@
         @(Enrollment.sid &e)
         "composite PK: find-first-where returns matching row")))
 
-  ;; exists? returns true when rows match
+  ; exists? returns true when rows match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"buy milk" false))
     (ignore (insert-todo &db @"write carp" true))
@@ -617,7 +617,7 @@
       (SQLite3.close db)
       (assert-true test res "exists? returns true when rows match")))
 
-  ;; exists? returns false when no rows match
+  ; exists? returns false when no rows match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [res (ok
@@ -625,13 +625,13 @@
       (SQLite3.close db)
       (assert-equal test false res "exists? returns false when no match")))
 
-  ;; exists? returns false on empty table
+  ; exists? returns false on empty table
   (let-do [db (fresh-db)
            res (ok (Todo.exists? &db "done = ?1" &[(to-sqlite3 1)]))]
     (SQLite3.close db)
     (assert-equal test false res "exists? returns false on empty table"))
 
-  ;; exists? on missing table returns error
+  ; exists? on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.exists? &db "done = ?1" &[(to-sqlite3 1)])]
     (SQLite3.close db)
@@ -639,7 +639,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "exists? on missing table returns error"))
 
-  ;; exists? with composite PK
+  ; exists? with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -654,7 +654,7 @@
         no
         "composite PK: exists? false for non-matching sid")))
 
-  ;; find-ordered sorts rows by the given clause
+  ; find-ordered sorts rows by the given clause
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"apple" true))
@@ -676,7 +676,7 @@
         (Todo.text (Array.unsafe-nth &items 2))
         "find-ordered last row is cherry")))
 
-  ;; find-ordered with DESC
+  ; find-ordered with DESC
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"apple" true))
@@ -688,7 +688,7 @@
         (Todo.text (Array.unsafe-nth &items 0))
         "find-ordered DESC puts cherry first")))
 
-  ;; find-ordered on empty table returns empty
+  ; find-ordered on empty table returns empty
   (let-do [db (fresh-db)
            items (ok (Todo.find-ordered &db "text ASC"))]
     (SQLite3.close db)
@@ -697,7 +697,7 @@
       (Array.length &items)
       "find-ordered on empty table returns empty array"))
 
-  ;; find-ordered with composite PK
+  ; find-ordered with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -710,7 +710,7 @@
         (Enrollment.grade (Array.unsafe-nth &items 0))
         "composite PK: find-ordered sorts by grade")))
 
-  ;; find-where-ordered filters and sorts
+  ; find-where-ordered filters and sorts
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"banana" false))
     (ignore (insert-todo &db @"apple" true))
@@ -731,7 +731,7 @@
         (Todo.text (Array.unsafe-nth &items 0))
         "find-where-ordered sorts filtered results")))
 
-  ;; find-where-ordered returns empty when no match
+  ; find-where-ordered returns empty when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [items (ok
@@ -745,7 +745,7 @@
         (Array.length &items)
         "find-where-ordered returns empty when no match")))
 
-  ;; find-page returns a page of sorted rows
+  ; find-page returns a page of sorted rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"cherry" false))
     (ignore (insert-todo &db @"apple" true))
@@ -765,7 +765,7 @@
         (Todo.text (Array.unsafe-nth &page 1))
         "find-page first page ends at banana")))
 
-  ;; find-page with offset skips rows
+  ; find-page with offset skips rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"cherry" false))
     (ignore (insert-todo &db @"apple" true))
@@ -783,7 +783,7 @@
         (Todo.text (Array.unsafe-nth &page 0))
         "find-page second page starts at cherry")))
 
-  ;; find-page past end returns fewer rows
+  ; find-page past end returns fewer rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"apple" false))
     (ignore (insert-todo &db @"banana" true))
@@ -795,7 +795,7 @@
         (Array.length &page)
         "find-page past end returns remaining rows")))
 
-  ;; find-page with offset past all rows returns empty
+  ; find-page with offset past all rows returns empty
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [page (ok (Todo.find-page &db "id ASC" 10 100))]
@@ -805,7 +805,7 @@
         (Array.length &page)
         "find-page with large offset returns empty")))
 
-  ;; find-page with limit 0 returns empty
+  ; find-page with limit 0 returns empty
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [page (ok (Todo.find-page &db "id ASC" 0 0))]
@@ -815,7 +815,7 @@
         (Array.length &page)
         "find-page with limit 0 returns empty")))
 
-  ;; find-page with composite PK
+  ; find-page with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -833,7 +833,7 @@
         (Enrollment.grade (Array.unsafe-nth &page 0))
         "composite PK: find-page sorts correctly")))
 
-  ;; find-where-page filters, sorts, and paginates
+  ; find-where-page filters, sorts, and paginates
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"cherry" false))
     (ignore (insert-todo &db @"apple" true))
@@ -863,7 +863,7 @@
         (Todo.text (Array.unsafe-nth &page 1))
         "find-where-page first page ends correctly")))
 
-  ;; find-where-page second page
+  ; find-where-page second page
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"cherry" false))
     (ignore (insert-todo &db @"apple" true))
@@ -883,7 +883,7 @@
         (Array.length &page)
         "find-where-page second page has remaining row")))
 
-  ;; find-where-page returns empty when no match
+  ; find-where-page returns empty when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (let-do [page (ok
@@ -899,7 +899,7 @@
         (Array.length &page)
         "find-where-page returns empty when no match")))
 
-  ;; find-where-page with composite PK
+  ; find-where-page with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -924,7 +924,7 @@
         (Enrollment.grade (Array.unsafe-nth &page 0))
         "composite PK: find-where-page sorts and filters")))
 
-  ;; batch-insert with empty array returns success
+  ; batch-insert with empty array returns success
   (let-do [db (fresh-db)
            res (Todo.batch-insert &db &[])]
     (SQLite3.close db)
@@ -932,7 +932,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "batch-insert with empty array returns success"))
 
-  ;; batch-insert with empty array leaves table unchanged
+  ; batch-insert with empty array leaves table unchanged
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"existing" false))
     (ignore (Todo.batch-insert &db &[]))
@@ -940,7 +940,7 @@
       (SQLite3.close db)
       (assert-equal test 1 n "batch-insert empty array leaves table unchanged")))
 
-  ;; batch-insert inserts multiple rows
+  ; batch-insert inserts multiple rows
   (let-do [db (fresh-db)
            items [(Todo.init 0 @"buy milk" false)
                   (Todo.init 0 @"write carp" true)
@@ -954,7 +954,7 @@
           "batch-insert returns success"))
       (assert-equal test 3 n "batch-insert inserts all rows")))
 
-  ;; batch-insert data is retrievable
+  ; batch-insert data is retrievable
   (let-do [db (fresh-db)
            items [(Todo.init 0 @"alpha" false) (Todo.init 0 @"beta" true)]]
     (ignore (Todo.batch-insert &db &items))
@@ -980,7 +980,7 @@
         @(Todo.done (Array.unsafe-nth &rows 1))
         "batch-insert second row done flag")))
 
-  ;; batch-insert single row
+  ; batch-insert single row
   (let-do [db (fresh-db)
            items [(Todo.init 0 @"solo" true)]]
     (ignore (Todo.batch-insert &db &items))
@@ -988,7 +988,7 @@
       (SQLite3.close db)
       (assert-equal test 1 n "batch-insert single row works")))
 
-  ;; batch-insert on missing table returns error
+  ; batch-insert on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            items [(Todo.init 0 @"fail" false)]
            res (Todo.batch-insert &db &items)]
@@ -997,7 +997,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "batch-insert on missing table returns error"))
 
-  ;; batch-insert with composite PK
+  ; batch-insert with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (let-do [items [(Enrollment.init 1 101 @"A")
@@ -1012,7 +1012,7 @@
             "composite PK: batch-insert returns success"))
         (assert-equal test 3 n "composite PK: batch-insert inserts all rows"))))
 
-  ;; batch-insert composite PK data is retrievable
+  ; batch-insert composite PK data is retrievable
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (let-do [items [(Enrollment.init 1 101 @"A") (Enrollment.init 2 102 @"B+")]]
@@ -1024,13 +1024,13 @@
           (Enrollment.grade &e)
           "composite PK: batch-insert data is retrievable"))))
 
-  ;; sum returns 0.0 on empty table
+  ; sum returns 0.0 on empty table
   (let-do [db (fresh-db)
            s (ok (Todo.sum &db "id"))]
     (SQLite3.close db)
     (assert-equal test 0.0 s "sum returns 0.0 on empty table"))
 
-  ;; sum returns correct total for integer column
+  ; sum returns correct total for integer column
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (ignore (insert-todo &db @"b" true))
@@ -1039,7 +1039,7 @@
       (SQLite3.close db)
       (assert-equal test 6.0 s "sum returns correct total for integer column")))
 
-  ;; sum returns correct total for double column
+  ; sum returns correct total for double column
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.5 false)))
@@ -1049,7 +1049,7 @@
       (SQLite3.close db)
       (assert-equal test 7.0 s "sum returns correct total for double column")))
 
-  ;; sum with composite PK
+  ; sum with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -1059,7 +1059,7 @@
       (SQLite3.close db)
       (assert-equal test 6.0 s "composite PK: sum returns correct total")))
 
-  ;; sum-where returns filtered sum
+  ; sum-where returns filtered sum
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (ignore (insert-todo &db @"b" true))
@@ -1068,7 +1068,7 @@
       (SQLite3.close db)
       (assert-equal test 4.0 s "sum-where returns filtered sum")))
 
-  ;; sum-where returns 0.0 when no match
+  ; sum-where returns 0.0 when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (let-do [s (ok
@@ -1079,13 +1079,13 @@
       (SQLite3.close db)
       (assert-equal test 0.0 s "sum-where returns 0.0 when no match")))
 
-  ;; avg returns 0.0 on empty table
+  ; avg returns 0.0 on empty table
   (let-do [db (fresh-db)
            a (ok (Todo.avg &db "id"))]
     (SQLite3.close db)
     (assert-equal test 0.0 a "avg returns 0.0 on empty table"))
 
-  ;; avg returns correct average
+  ; avg returns correct average
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 2.0 false)))
@@ -1095,7 +1095,7 @@
       (SQLite3.close db)
       (assert-equal test 4.0 a "avg returns correct average")))
 
-  ;; avg on integer column
+  ; avg on integer column
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (ignore (insert-todo &db @"b" true))
@@ -1104,7 +1104,7 @@
       (SQLite3.close db)
       (assert-equal test 2.0 a "avg returns correct average for integer column")))
 
-  ;; avg-where returns filtered average
+  ; avg-where returns filtered average
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 2.0 true)))
@@ -1114,7 +1114,7 @@
       (SQLite3.close db)
       (assert-equal test 4.0 a "avg-where returns filtered average")))
 
-  ;; avg-where returns 0.0 when no match
+  ; avg-where returns 0.0 when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (let-do [a (ok
@@ -1125,13 +1125,13 @@
       (SQLite3.close db)
       (assert-equal test 0.0 a "avg-where returns 0.0 when no match")))
 
-  ;; min-val returns 0.0 on empty table
+  ; min-val returns 0.0 on empty table
   (let-do [db (fresh-db)
            m (ok (Todo.min-val &db "id"))]
     (SQLite3.close db)
     (assert-equal test 0.0 m "min-val returns 0.0 on empty table"))
 
-  ;; min-val returns minimum value
+  ; min-val returns minimum value
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 3.14 false)))
@@ -1141,7 +1141,7 @@
       (SQLite3.close db)
       (assert-equal test 1.5 m "min-val returns minimum value")))
 
-  ;; min-val on integer column
+  ; min-val on integer column
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (ignore (insert-todo &db @"b" true))
@@ -1150,7 +1150,7 @@
       (SQLite3.close db)
       (assert-equal test 1.0 m "min-val returns minimum integer as double")))
 
-  ;; min-val-where returns filtered minimum
+  ; min-val-where returns filtered minimum
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.0 true)))
@@ -1161,7 +1161,7 @@
       (SQLite3.close db)
       (assert-equal test 3.0 m "min-val-where returns filtered minimum")))
 
-  ;; min-val-where returns 0.0 when no match
+  ; min-val-where returns 0.0 when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (let-do [m (ok
@@ -1172,13 +1172,13 @@
       (SQLite3.close db)
       (assert-equal test 0.0 m "min-val-where returns 0.0 when no match")))
 
-  ;; max-val returns 0.0 on empty table
+  ; max-val returns 0.0 on empty table
   (let-do [db (fresh-db)
            m (ok (Todo.max-val &db "id"))]
     (SQLite3.close db)
     (assert-equal test 0.0 m "max-val returns 0.0 on empty table"))
 
-  ;; max-val returns maximum value
+  ; max-val returns maximum value
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 3.14 false)))
@@ -1188,7 +1188,7 @@
       (SQLite3.close db)
       (assert-equal test 3.14 m "max-val returns maximum value")))
 
-  ;; max-val on integer column
+  ; max-val on integer column
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (ignore (insert-todo &db @"b" true))
@@ -1197,7 +1197,7 @@
       (SQLite3.close db)
       (assert-equal test 3.0 m "max-val returns maximum integer as double")))
 
-  ;; max-val-where returns filtered maximum
+  ; max-val-where returns filtered maximum
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Note.create-table &db))
     (ignore (Note.insert &db &(Note.init 0l @"a" @"b" 1.0 true)))
@@ -1208,7 +1208,7 @@
       (SQLite3.close db)
       (assert-equal test 5.0 m "max-val-where returns filtered maximum")))
 
-  ;; max-val-where returns 0.0 when no match
+  ; max-val-where returns 0.0 when no match
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"a" false))
     (let-do [m (ok
@@ -1219,7 +1219,7 @@
       (SQLite3.close db)
       (assert-equal test 0.0 m "max-val-where returns 0.0 when no match")))
 
-  ;; aggregate with composite PK - avg-where
+  ; aggregate with composite PK - avg-where
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -1232,7 +1232,7 @@
         a
         "composite PK: avg-where returns correct average")))
 
-  ;; aggregate on missing table returns error
+  ; aggregate on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.sum &db "id")]
     (SQLite3.close db)
@@ -1240,7 +1240,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "sum on missing table returns error"))
 
-  ;; drop-table on existing table succeeds
+  ; drop-table on existing table succeeds
   (let-do [db (fresh-db)
            res (Todo.drop-table &db)]
     (SQLite3.close db)
@@ -1248,7 +1248,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "drop-table on existing table succeeds"))
 
-  ;; drop-table on non-existent table succeeds (IF EXISTS)
+  ; drop-table on non-existent table succeeds (IF EXISTS)
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.drop-table &db)]
     (SQLite3.close db)
@@ -1256,7 +1256,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "drop-table on non-existent table succeeds"))
 
-  ;; after drop-table, operations fail
+  ; after drop-table, operations fail
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"task" false))
     (ignore (Todo.drop-table &db))
@@ -1266,7 +1266,7 @@
         (match res (Result.Error _) true (Result.Success _) false)
         "after drop-table, find-all fails")))
 
-  ;; drop-table then re-create works
+  ; drop-table then re-create works
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"old" false))
     (ignore (Todo.drop-table &db))
@@ -1275,7 +1275,7 @@
       (SQLite3.close db)
       (assert-equal test 0 n "drop-table then re-create gives empty table")))
 
-  ;; drop-table with composite PK
+  ; drop-table with composite PK
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -1285,7 +1285,7 @@
         (match res (Result.Success _) true (Result.Error _) false)
         "composite PK: drop-table succeeds")))
 
-  ;; upsert inserts when row does not exist
+  ; upsert inserts when row does not exist
   (let-do [db (fresh-db)]
     (ignore (Todo.upsert &db &(Todo.init 1 @"new task" false)))
     (let-do [t (ok (Todo.find-by-id &db &1))]
@@ -1300,7 +1300,7 @@
         @(Todo.done &t)
         "upsert inserts new row done flag")))
 
-  ;; upsert updates when PK already exists
+  ; upsert updates when PK already exists
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"original" false))
     (ignore (Todo.upsert &db &(Todo.init 1 @"updated" true)))
@@ -1316,7 +1316,7 @@
         @(Todo.done &t)
         "upsert updates existing row done flag")))
 
-  ;; upsert does not affect other rows
+  ; upsert does not affect other rows
   (let-do [db (fresh-db)]
     (ignore (insert-todo &db @"keep" false))
     (ignore (insert-todo &db @"change" false))
@@ -1334,7 +1334,7 @@
         (Todo.text &t2)
         "upsert updates only the target row")))
 
-  ;; upsert returns success
+  ; upsert returns success
   (let-do [db (fresh-db)
            res (Todo.upsert &db &(Todo.init 1 @"task" false))]
     (SQLite3.close db)
@@ -1342,7 +1342,7 @@
       (match res (Result.Success _) true (Result.Error _) false)
       "upsert returns success"))
 
-  ;; upsert on missing table returns error
+  ; upsert on missing table returns error
   (let-do [db (ok (SQLite3.open ":memory:"))
            res (Todo.upsert &db &(Todo.init 1 @"fail" false))]
     (SQLite3.close db)
@@ -1350,7 +1350,7 @@
       (match res (Result.Error _) true (Result.Success _) false)
       "upsert on missing table returns error"))
 
-  ;; upsert with composite PK inserts new row
+  ; upsert with composite PK inserts new row
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.upsert &db &(Enrollment.init 1 101 @"A")))
@@ -1361,7 +1361,7 @@
         (Enrollment.grade &e)
         "composite PK: upsert inserts new row")))
 
-  ;; upsert with composite PK updates existing row
+  ; upsert with composite PK updates existing row
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"B")))
@@ -1373,7 +1373,7 @@
         (Enrollment.grade &e)
         "composite PK: upsert updates existing row")))
 
-  ;; upsert with composite PK does not affect other rows
+  ; upsert with composite PK does not affect other rows
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Enrollment.create-table &db))
     (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
@@ -1392,7 +1392,7 @@
         (Enrollment.grade &e2)
         "composite PK: upsert leaves other row unchanged")))
 
-  ;; upsert idempotent: same data twice is a no-op
+  ; upsert idempotent: same data twice is a no-op
   (let-do [db (fresh-db)]
     (ignore (Todo.upsert &db &(Todo.init 1 @"task" false)))
     (ignore (Todo.upsert &db &(Todo.init 1 @"task" false)))
