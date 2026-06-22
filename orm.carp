@@ -188,7 +188,57 @@ any database with a backend.
                       [(Symbol.from "c0")
                        '(copy (Array.unsafe-nth (Array.unsafe-nth &rows 0) 0))]
                       (list 'Result.Success
-                            (ORM.extract-for backend 'Double (Symbol.from "c0"))))))))
+                            (ORM.extract-for backend 'Double (Symbol.from "c0")))))))
+
+  (hidden map-rows)
+  (defndynamic map-rows [backend name mems]
+    (list 'Result.Success
+          (list 'Array.copy-map
+                (list 'ref
+                      (list 'fn
+                            ['cols]
+                            (list 'let-do
+                                  (ORM.row-let-bindings mems 'cols)
+                                  (ORM.init-call-from-cols backend name mems))))
+                '&rows)))
+
+  (hidden first-row)
+  (defndynamic first-row [backend name mems]
+    (list 'if
+          '(= (Array.length &rows) 0)
+          '(Result.Error @"not found")
+          (list 'let-do
+                (ORM.row-let-bindings mems '(Array.unsafe-nth &rows 0))
+                (list 'Result.Success
+                      (ORM.init-call-from-cols backend name mems)))))
+
+  (hidden agg-body)
+  (defndynamic agg-body [query-sym backend agg-prefix suffix]
+    (list 'let
+          ['qcol
+           (list 'ORM.quote-col 'col)
+           's1
+           (list 'String.append agg-prefix '&qcol)
+           'sql
+           (list 'String.append '&s1 suffix)]
+          (ORM.agg-extract-body query-sym backend '&sql '&[])))
+
+  (hidden agg-where-body)
+  (defndynamic agg-where-body [query-sym backend agg-prefix where-suffix]
+    (list 'let
+          ['qcol
+           (list 'ORM.quote-col 'col)
+           's1
+           (list 'String.append agg-prefix '&qcol)
+           's2
+           (list 'String.append '&s1 where-suffix)
+           'sql
+           (list 'String.append '&s2 'where-clause)]
+          (ORM.agg-extract-body query-sym backend '&sql 'params))))
+
+(defmodule ORM
+  (hidden quote-col)
+  (defn quote-col [col] (str* "\"" col "\"")))
 
 (doc derive-model "generates CRUD functions for a type in its own module.
 
@@ -507,18 +557,7 @@ be set on the row. Returns `(Result () String)`.")
                             '(Result.Error e)
                             '(Result.Error e)
                             '(Result.Success rows)
-                            (list 'Result.Success
-                                  (list 'Array.copy-map
-                                        (list 'ref
-                                              (list 'fn
-                                                    ['cols]
-                                                    (list 'let-do
-                                                          (ORM.row-let-bindings all-mems
-                                                                                'cols)
-                                                          (ORM.init-call-from-cols backend
-                                                                                   name
-                                                                                   all-mems))))
-                                        '&rows))))
+                            (ORM.map-rows backend name all-mems)))
 
                 (list 'doc
                       'find-where
@@ -539,18 +578,7 @@ be set on the row. Returns `(Result () String)`.")
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'Result.Success
-                                        (list 'Array.copy-map
-                                              (list 'ref
-                                                    (list 'fn
-                                                          ['cols]
-                                                          (list 'let-do
-                                                                (ORM.row-let-bindings all-mems
-                                                                                      'cols)
-                                                                (ORM.init-call-from-cols backend
-                                                                                         name
-                                                                                         all-mems))))
-                                              '&rows)))))
+                                  (ORM.map-rows backend name all-mems))))
 
                 (list 'doc
                       'count
@@ -619,12 +647,10 @@ empty tables or NULL values.")
                 (list 'defn
                       'sum
                       ['db 'col]
-                      (list 'let
-                            ['s1
-                             (list 'String.append sum-agg-prefix 'col)
-                             'sql
-                             (list 'String.append '&s1 agg-col-suffix)]
-                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+                      (ORM.agg-body query-sym
+                                    backend
+                                    sum-agg-prefix
+                                    agg-col-suffix))
 
                 (list 'doc
                       'sum-where
@@ -637,17 +663,10 @@ WHERE clause.
                 (list 'defn
                       'sum-where
                       ['db 'col 'where-clause 'params]
-                      (list 'let
-                            ['s1
-                             (list 'String.append sum-agg-prefix 'col)
-                             's2
-                             (list 'String.append '&s1 agg-col-where-suffix)
-                             'sql
-                             (list 'String.append '&s2 'where-clause)]
-                            (ORM.agg-extract-body query-sym
-                                                  backend
-                                                  '&sql
-                                                  'params)))
+                      (ORM.agg-where-body query-sym
+                                          backend
+                                          sum-agg-prefix
+                                          agg-col-where-suffix))
 
                 (list 'doc
                       'avg
@@ -658,12 +677,10 @@ empty tables or NULL values.")
                 (list 'defn
                       'avg
                       ['db 'col]
-                      (list 'let
-                            ['s1
-                             (list 'String.append avg-agg-prefix 'col)
-                             'sql
-                             (list 'String.append '&s1 agg-col-suffix)]
-                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+                      (ORM.agg-body query-sym
+                                    backend
+                                    avg-agg-prefix
+                                    agg-col-suffix))
 
                 (list 'doc
                       'avg-where
@@ -676,17 +693,10 @@ WHERE clause.
                 (list 'defn
                       'avg-where
                       ['db 'col 'where-clause 'params]
-                      (list 'let
-                            ['s1
-                             (list 'String.append avg-agg-prefix 'col)
-                             's2
-                             (list 'String.append '&s1 agg-col-where-suffix)
-                             'sql
-                             (list 'String.append '&s2 'where-clause)]
-                            (ORM.agg-extract-body query-sym
-                                                  backend
-                                                  '&sql
-                                                  'params)))
+                      (ORM.agg-where-body query-sym
+                                          backend
+                                          avg-agg-prefix
+                                          agg-col-where-suffix))
 
                 (list 'doc
                       'min-val
@@ -697,12 +707,10 @@ empty tables or NULL values.")
                 (list 'defn
                       'min-val
                       ['db 'col]
-                      (list 'let
-                            ['s1
-                             (list 'String.append min-agg-prefix 'col)
-                             'sql
-                             (list 'String.append '&s1 agg-col-suffix)]
-                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+                      (ORM.agg-body query-sym
+                                    backend
+                                    min-agg-prefix
+                                    agg-col-suffix))
 
                 (list 'doc
                       'min-val-where
@@ -715,17 +723,10 @@ WHERE clause.
                 (list 'defn
                       'min-val-where
                       ['db 'col 'where-clause 'params]
-                      (list 'let
-                            ['s1
-                             (list 'String.append min-agg-prefix 'col)
-                             's2
-                             (list 'String.append '&s1 agg-col-where-suffix)
-                             'sql
-                             (list 'String.append '&s2 'where-clause)]
-                            (ORM.agg-extract-body query-sym
-                                                  backend
-                                                  '&sql
-                                                  'params)))
+                      (ORM.agg-where-body query-sym
+                                          backend
+                                          min-agg-prefix
+                                          agg-col-where-suffix))
 
                 (list 'doc
                       'max-val
@@ -736,12 +737,10 @@ empty tables or NULL values.")
                 (list 'defn
                       'max-val
                       ['db 'col]
-                      (list 'let
-                            ['s1
-                             (list 'String.append max-agg-prefix 'col)
-                             'sql
-                             (list 'String.append '&s1 agg-col-suffix)]
-                            (ORM.agg-extract-body query-sym backend '&sql '&[])))
+                      (ORM.agg-body query-sym
+                                    backend
+                                    max-agg-prefix
+                                    agg-col-suffix))
 
                 (list 'doc
                       'max-val-where
@@ -754,17 +753,10 @@ WHERE clause.
                 (list 'defn
                       'max-val-where
                       ['db 'col 'where-clause 'params]
-                      (list 'let
-                            ['s1
-                             (list 'String.append max-agg-prefix 'col)
-                             's2
-                             (list 'String.append '&s1 agg-col-where-suffix)
-                             'sql
-                             (list 'String.append '&s2 'where-clause)]
-                            (ORM.agg-extract-body query-sym
-                                                  backend
-                                                  '&sql
-                                                  'params)))
+                      (ORM.agg-where-body query-sym
+                                          backend
+                                          max-agg-prefix
+                                          agg-col-where-suffix))
 
                 (list 'defn
                       'find-by-id
@@ -777,17 +769,7 @@ WHERE clause.
                             '(Result.Error e)
                             '(Result.Error e)
                             '(Result.Success rows)
-                            (list 'if
-                                  '(= (Array.length &rows) 0)
-                                  '(Result.Error @"not found")
-                                  (list 'let-do
-                                        (ORM.row-let-bindings all-mems
-                                                              '(Array.unsafe-nth &rows
-                                                                                 0))
-                                        (list 'Result.Success
-                                              (ORM.init-call-from-cols backend
-                                                                       name
-                                                                       all-mems))))))
+                            (ORM.first-row backend name all-mems)))
 
                 (list 'defn
                       'update
@@ -875,17 +857,7 @@ the table is empty.")
                             '(Result.Error e)
                             '(Result.Error e)
                             '(Result.Success rows)
-                            (list 'if
-                                  '(= (Array.length &rows) 0)
-                                  '(Result.Error @"not found")
-                                  (list 'let-do
-                                        (ORM.row-let-bindings all-mems
-                                                              '(Array.unsafe-nth &rows
-                                                                                 0))
-                                        (list 'Result.Success
-                                              (ORM.init-call-from-cols backend
-                                                                       name
-                                                                       all-mems))))))
+                            (ORM.first-row backend name all-mems)))
 
                 (list 'doc
                       'find-first-where
@@ -909,17 +881,7 @@ an error if no rows match.
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'if
-                                        '(= (Array.length &rows) 0)
-                                        '(Result.Error @"not found")
-                                        (list 'let-do
-                                              (ORM.row-let-bindings all-mems
-                                                                    '(Array.unsafe-nth &rows
-                                                                                       0))
-                                              (list 'Result.Success
-                                                    (ORM.init-call-from-cols backend
-                                                                             name
-                                                                             all-mems)))))))
+                                  (ORM.first-row backend name all-mems))))
 
                 (list 'doc
                       'exists?
@@ -975,18 +937,7 @@ an error if no rows match.
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'Result.Success
-                                        (list 'Array.copy-map
-                                              (list 'ref
-                                                    (list 'fn
-                                                          ['cols]
-                                                          (list 'let-do
-                                                                (ORM.row-let-bindings all-mems
-                                                                                      'cols)
-                                                                (ORM.init-call-from-cols backend
-                                                                                         name
-                                                                                         all-mems))))
-                                              '&rows)))))
+                                  (ORM.map-rows backend name all-mems))))
 
                 (list 'doc
                       'find-where-ordered
@@ -1013,18 +964,7 @@ given ORDER BY clause.
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'Result.Success
-                                        (list 'Array.copy-map
-                                              (list 'ref
-                                                    (list 'fn
-                                                          ['cols]
-                                                          (list 'let-do
-                                                                (ORM.row-let-bindings all-mems
-                                                                                      'cols)
-                                                                (ORM.init-call-from-cols backend
-                                                                                         name
-                                                                                         all-mems))))
-                                              '&rows)))))
+                                  (ORM.map-rows backend name all-mems))))
 
                 (list 'doc
                       'find-page
@@ -1055,18 +995,7 @@ rows to skip.")
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'Result.Success
-                                        (list 'Array.copy-map
-                                              (list 'ref
-                                                    (list 'fn
-                                                          ['cols]
-                                                          (list 'let-do
-                                                                (ORM.row-let-bindings all-mems
-                                                                                      'cols)
-                                                                (ORM.init-call-from-cols backend
-                                                                                         name
-                                                                                         all-mems))))
-                                              '&rows)))))
+                                  (ORM.map-rows backend name all-mems))))
 
                 (list 'doc
                       'find-where-page
@@ -1104,18 +1033,7 @@ rows to skip.")
                                   '(Result.Error e)
                                   '(Result.Error e)
                                   '(Result.Success rows)
-                                  (list 'Result.Success
-                                        (list 'Array.copy-map
-                                              (list 'ref
-                                                    (list 'fn
-                                                          ['cols]
-                                                          (list 'let-do
-                                                                (ORM.row-let-bindings all-mems
-                                                                                      'cols)
-                                                                (ORM.init-call-from-cols backend
-                                                                                         name
-                                                                                         all-mems))))
-                                              '&rows)))))))))
+                                  (ORM.map-rows backend name all-mems))))))))
 
 (defmodule ORM
   (hidden txn-stmt-form)
