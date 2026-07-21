@@ -76,8 +76,8 @@ statement fails (e.g. the database is read-only).
 ```
 
 `insert` writes the non-PK fields and returns the auto-assigned rowid
-wrapped in a `Result`. The PK field on the input row is ignored, which
-is why we pass `0`.
+as a `Long`, wrapped in a `Result`. The PK field on the input row is
+ignored, which is why we pass `0`.
 
 ### Reading
 
@@ -229,7 +229,7 @@ following functions to the `T` module:
 | Function             | Type                                           |
 |----------------------|------------------------------------------------|
 | `create-table`       | `(Fn [&Backend.Db] (Result () String))`        |
-| `insert`             | `(Fn [&Backend.Db &T] (Result Int String))`    |
+| `insert`             | `(Fn [&Backend.Db &T] (Result Long String))`   |
 | `find-all`           | `(Fn [&Backend.Db] (Result (Array T) String))` |
 | `find-by-id`         | `(Fn [&Backend.Db &Pk] (Result T String))`     |
 | `find-where`         | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result (Array T) String))` |

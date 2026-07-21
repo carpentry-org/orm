@@ -48,8 +48,8 @@
            id1 (insert-todo &db @"buy milk" false)
            id2 (insert-todo &db @"write carp" true)]
     (SQLite3.close db)
-    (ignore (assert-equal test 1 id1 "insert returns rowid 1 for first row"))
-    (assert-equal test 2 id2 "insert returns rowid 2 for second row"))
+    (ignore (assert-equal test 1l id1 "insert returns rowid 1 for first row"))
+    (assert-equal test 2l id2 "insert returns rowid 2 for second row"))
 
   ; find-by-id round-trips all fields
   (let-do [db (fresh-db)]
@@ -336,7 +336,7 @@
                                                   &(Todo.init 0 @"get id" false)))]
     (SQLite3.close db)
     (assert-equal test
-      1
+      1l
       (ok res)
       "with-transaction propagates the body result value"))
 
