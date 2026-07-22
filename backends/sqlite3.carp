@@ -1,5 +1,5 @@
 (load "../orm.carp")
-(load "git@github.com:carpentry-org/sqlite3@0.0.6")
+(load "git@github.com:carpentry-org/sqlite3@0.2.0")
 
 (doc SQLiteBackend "is the SQLite backend for the ORM.
 
@@ -49,17 +49,17 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
   (hidden extract-col)
   (defndynamic extract-col [t col-var]
     (cond
-      (= t 'Int) (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0)
-      (= t 'Long)
-        (list 'Long.from-int
-              (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0))
+      (= t 'Int)
+        (list 'Long.to-int
+              (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0l))
+      (= t 'Long) (list 'match col-var '(SQLite3.Type.Integer v) 'v '_ '0l)
       (= t 'Double) (list 'match col-var '(SQLite3.Type.Floating v) 'v '_ '0.0)
       (= t 'Float)
         (list 'Double.to-float
               (list 'match col-var '(SQLite3.Type.Floating v) 'v '_ '0.0))
       (= t 'String) (list 'match col-var '(SQLite3.Type.Text v) 'v '_ '@"")
       (= t 'Bool)
-        (list 'match col-var '(SQLite3.Type.Integer v) '(/= v 0) '_ 'false)
+        (list 'match col-var '(SQLite3.Type.Integer v) '(/= v 0l) '_ 'false)
       (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
 
   ; Given a Carp type and an expression producing a reference to the value,

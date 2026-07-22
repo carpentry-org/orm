@@ -247,7 +247,7 @@ any database with a backend.
 describing the primary key (one or more fields).
 
 For single-PK models, `insert` omits the PK column (auto-increment) and
-returns the assigned rowid. For composite-PK models, `insert` includes
+returns the assigned rowid as a `Long`. For composite-PK models, `insert` includes
 all fields and returns `(Result () String)`. `batch-insert` inserts
 multiple rows in a single SQL statement and returns `(Result () String)`.
 `find-by-id` and `delete-by-id` accept one argument per PK field.
@@ -474,7 +474,7 @@ does not exist.")
                                                                      0))]
                                                 (list 'Result.Success
                                                       (ORM.extract-for backend
-                                                                       'Int
+                                                                       'Long
                                                                        (Symbol.from "c0")))))))))
 
                 (list 'doc
