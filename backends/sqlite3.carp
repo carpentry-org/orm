@@ -8,7 +8,7 @@ package, then registers the dynamic helpers that `derive-model` uses to
 emit SQL and row marshalling.
 
 ```
-(load \"git@github.com:carpentry-org/orm@0.3.0\" \"backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.4.0\" \"backends/sqlite3.carp\")
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
