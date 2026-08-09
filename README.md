@@ -51,7 +51,8 @@ is written as SQL `NULL`, and a `NULL` read back becomes `Maybe.Nothing`:
   (Profile.insert &db
                   &(Profile.init 0 @"ann" (Maybe.Just @"hi") (Maybe.Nothing))))
 
-(Profile.find-where &db "bio IS NULL" &[])
+(Profile.find-where &db "age IS NULL" &[])
+; => (Success [(Profile 1 @"ann" (Just @"hi") (Nothing))])
 ```
 
 `update` and `upsert` set a column back to `NULL` by writing
