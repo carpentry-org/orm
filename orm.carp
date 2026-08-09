@@ -65,6 +65,21 @@ any database with a backend.
       (ORM.member? (car (car mems)) names) (ORM.without (cdr mems) names)
       (cons (car mems) (ORM.without (cdr mems) names))))
 
+  (hidden only)
+  (defndynamic only [mems names]
+    (cond
+      (empty? mems) []
+      (ORM.member? (car (car mems)) names)
+        (cons (car mems) (ORM.only (cdr mems) names))
+      (ORM.only (cdr mems) names)))
+
+  (hidden any-maybe?)
+  (defndynamic any-maybe? [mems]
+    (cond
+      (empty? mems) false
+      (let [t (cadr (car mems))] (if (list? t) (= 'Maybe (car t)) false)) true
+      (ORM.any-maybe? (cdr mems))))
+
   (hidden backend-call)
   (defndynamic backend-call [backend fn-name args]
     (eval (cons (Symbol.prefix backend fn-name) args)))
@@ -292,6 +307,8 @@ The generated functions live in the type's module.")
                 ["derive-model: "
                  (str name)
                  " has no non-PK fields to insert/update"]))
+          (ORM.any-maybe? (append pk-mems (ORM.only all-mems pk-names)))
+            (macro-error "derive-model: primary-key fields cannot be nullable")
           ())
         col-defs (ORM.sql-col-defs backend all-mems)
         pk-name-str (ORM.join ", " (map str pk-names))

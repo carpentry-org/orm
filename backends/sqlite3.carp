@@ -16,13 +16,14 @@ emit SQL and row marshalling.
 
 Generated functions take an `&SQLite3.SQLite` as their first argument.
 Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
-`Bool`. Anything else raises a macro error at expansion time.
+`Bool`, plus `(Maybe T)` of any of those for a nullable column. Anything
+else raises a macro error at expansion time.
 ")
 
 (defmodule SQLiteBackend
   ; Map a Carp type symbol to a SQLite storage class.
-  (hidden sql-type)
-  (defndynamic sql-type [t]
+  (hidden scalar-sql-type)
+  (defndynamic scalar-sql-type [t]
     (cond
       (= t 'Int) "INTEGER"
       (= t 'Long) "INTEGER"
@@ -31,6 +32,26 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
       (= t 'Float) "REAL"
       (= t 'String) "TEXT"
       (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
+
+  (hidden nullable?)
+  (defndynamic nullable? [t] (if (list? t) (= 'Maybe (car t)) false))
+
+  ; The `T` of a `(Maybe T)` column, rejecting anything not a supported scalar.
+  (hidden inner-type)
+  (defndynamic inner-type [t]
+    (let [inner (cadr t)
+          _ (if (list? inner)
+            (macro-error
+              (String.concat
+                ["SQLiteBackend: unsupported nullable type " (str t)]))
+            (SQLiteBackend.scalar-sql-type inner))]
+      inner))
+
+  (hidden sql-type)
+  (defndynamic sql-type [t]
+    (if (SQLiteBackend.nullable? t)
+      (SQLiteBackend.scalar-sql-type (SQLiteBackend.inner-type t))
+      (SQLiteBackend.scalar-sql-type t)))
 
   ; SQLite parameter placeholders are 1-indexed, `?1 ?2 ...`.
   (hidden placeholder)
@@ -44,10 +65,8 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
   (hidden last-insert-id-sql)
   (defndynamic last-insert-id-sql [] "SELECT last_insert_rowid()")
 
-  ; Given a Carp type and a variable holding an owned SQLite3.Type value,
-  ; return a form extracting the underlying Carp value.
-  (hidden extract-col)
-  (defndynamic extract-col [t col-var]
+  (hidden scalar-extract)
+  (defndynamic scalar-extract [t col-var]
     (cond
       (= t 'Int)
         (list 'Long.to-int
@@ -62,10 +81,34 @@ Supported field types are `Int`, `Long`, `Double`, `Float`, `String`, and
         (list 'match col-var '(SQLite3.Type.Integer v) '(/= v 0l) '_ 'false)
       (macro-error (String.concat ["SQLiteBackend: unsupported type " (str t)]))))
 
+  ; Given a Carp type and a variable holding an owned SQLite3.Type value,
+  ; return a form extracting the underlying Carp value.
+  (hidden extract-col)
+  (defndynamic extract-col [t col-var]
+    (if (SQLiteBackend.nullable? t)
+      (list 'match
+            col-var
+            '(SQLite3.Type.Null)
+            '(Maybe.Nothing)
+            'nonnull
+            (list 'Maybe.Just
+                  (SQLiteBackend.scalar-extract (SQLiteBackend.inner-type t)
+                                                'nonnull)))
+      (SQLiteBackend.scalar-extract t col-var)))
+
   ; Given a Carp type and an expression producing a reference to the value,
   ; return a form that converts it into a bound parameter.
   (hidden bind-value)
-  (defndynamic bind-value [t expr] (list 'to-sqlite3 (list 'copy expr)))
+  (defndynamic bind-value [t expr]
+    (if (SQLiteBackend.nullable? t)
+      (let [_ (SQLiteBackend.inner-type t)]
+        (list 'match
+              (list 'copy expr)
+              '(Maybe.Nothing)
+              '(SQLite3.Type.Null)
+              '(Maybe.Just v)
+              '(to-sqlite3 v)))
+      (list 'to-sqlite3 (list 'copy expr))))
 
   ; SQL statements for transaction control.
   (hidden begin-sql)

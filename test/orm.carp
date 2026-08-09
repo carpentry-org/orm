@@ -28,10 +28,24 @@
                 at Long])
 (derive-model Stamp SQLiteBackend [id Int])
 
+; Model with nullable columns of several types
+(deftype Profile
+  [id Int
+   handle String
+   bio (Maybe String)
+   age (Maybe Int)
+   rating (Maybe Double)])
+(derive-model Profile SQLiteBackend [id Int])
+
 ; Open a fresh in-memory DB and run the Todo table migration.
 (defn fresh-db []
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Todo.create-table &db))
+    db))
+
+(defn fresh-profiles []
+  (let-do [db (ok (SQLite3.open ":memory:"))]
+    (ignore (Profile.create-table &db))
     db))
 
 (defn insert-todo [db text done] (ok (Todo.insert db &(Todo.init 0 text done))))
@@ -1426,4 +1440,278 @@
     (ignore (Todo.upsert &db &(Todo.init 1 @"task" false)))
     (let-do [n (ok (Todo.count &db))]
       (SQLite3.close db)
-      (assert-equal test 1 n "upsert same data twice produces one row"))))
+      (assert-equal test 1 n "upsert same data twice produces one row")))
+
+  ; nullable columns round-trip Just values
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Just @"hi")
+                                     (Maybe.Just 30)
+                                     (Maybe.Just 4.5))))
+    (let-do [p (ok (Profile.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(Maybe.Just @"hi")
+          (Profile.bio &p)
+          "nullable String round-trips Just"))
+      (ignore
+        (assert-equal test
+          &(Maybe.Just 30)
+          (Profile.age &p)
+          "nullable Int round-trips Just"))
+      (assert-equal test
+        &(Maybe.Just 4.5)
+        (Profile.rating &p)
+        "nullable Double round-trips Just")))
+
+  ; nullable columns round-trip Nothing
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"bob"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (let-do [p (ok (Profile.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(the (Maybe String) (Maybe.Nothing))
+          (Profile.bio &p)
+          "nullable String round-trips Nothing"))
+      (ignore
+        (assert-equal test
+          &(the (Maybe Int) (Maybe.Nothing))
+          (Profile.age &p)
+          "nullable Int round-trips Nothing"))
+      (assert-equal test
+        &(the (Maybe Double) (Maybe.Nothing))
+        (Profile.rating &p)
+        "nullable Double round-trips Nothing")))
+
+  ; a NULL written by another writer decodes as Nothing, not a zero value
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (SQLite3.query &db
+                     "INSERT INTO Profile (id, handle, bio, age, rating) VALUES (1, 'cy', NULL, NULL, NULL)"
+                     &[]))
+    (let-do [p (ok (Profile.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(the (Maybe Int) (Maybe.Nothing))
+          (Profile.age &p)
+          "raw SQL NULL decodes as Nothing rather than 0"))
+      (assert-equal test
+        &(the (Maybe String) (Maybe.Nothing))
+        (Profile.bio &p)
+        "raw SQL NULL decodes as Nothing rather than the empty string")))
+
+  ; update sets a nullable column back to NULL
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Just @"hi")
+                                     (Maybe.Just 30)
+                                     (Maybe.Just 4.5))))
+    (ignore
+      (Profile.update &db
+                      &(Profile.init 1
+                                     @"ann"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (let-do [p (ok (Profile.find-by-id &db &1))
+             n (ok (Profile.count-where &db "bio IS NULL" &[]))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(the (Maybe String) (Maybe.Nothing))
+          (Profile.bio &p)
+          "update writes SQL NULL for Nothing"))
+      (assert-equal test 1 n "update Just -> Nothing is visible to IS NULL")))
+
+  ; update sets a NULL column back to a value
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"bob"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.update &db
+                      &(Profile.init 1
+                                     @"bob"
+                                     (Maybe.Just @"back")
+                                     (Maybe.Just 7)
+                                     (Maybe.Nothing))))
+    (let-do [p (ok (Profile.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(Maybe.Just @"back")
+          (Profile.bio &p)
+          "update Nothing -> Just writes the value"))
+      (assert-equal test
+        &(Maybe.Just 7)
+        (Profile.age &p)
+        "update Nothing -> Just writes the Int value")))
+
+  ; find-where selects on IS NULL and IS NOT NULL
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Just @"hi")
+                                     (Maybe.Just 30)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"bob"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (let-do [nulls (ok (Profile.find-where &db "bio IS NULL" &[]))
+             set (ok (Profile.find-where &db "bio IS NOT NULL" &[]))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          "bob"
+          (Profile.handle (Array.unsafe-nth &nulls 0))
+          "find-where IS NULL matches the NULL row"))
+      (assert-equal test
+        "ann"
+        (Profile.handle (Array.unsafe-nth &set 0))
+        "find-where IS NOT NULL matches the non-NULL row")))
+
+  ; batch-insert writes NULLs and values in one statement
+  (let-do [db (fresh-profiles)
+           rows [(Profile.init 0
+                               @"ann"
+                               (Maybe.Just @"hi")
+                               (Maybe.Just 30)
+                               (Maybe.Nothing))
+                 (Profile.init 0
+                               @"bob"
+                               (Maybe.Nothing)
+                               (Maybe.Just 40)
+                               (Maybe.Nothing))]]
+    (ignore (Profile.batch-insert &db &rows))
+    (let-do [n (ok (Profile.count-where &db "bio IS NULL" &[]))
+             p (ok (Profile.find-by-id &db &1))]
+      (SQLite3.close db)
+      (ignore (assert-equal test 1 n "batch-insert writes NULL for Nothing"))
+      (assert-equal test
+        &(Maybe.Just @"hi")
+        (Profile.bio &p)
+        "batch-insert writes the value for Just")))
+
+  ; upsert replaces a value with NULL
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.upsert &db
+                      &(Profile.init 1
+                                     @"ann"
+                                     (Maybe.Just @"hi")
+                                     (Maybe.Just 30)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.upsert &db
+                      &(Profile.init 1
+                                     @"ann"
+                                     (Maybe.Nothing)
+                                     (Maybe.Just 31)
+                                     (Maybe.Nothing))))
+    (let-do [p (ok (Profile.find-by-id &db &1))
+             n (ok (Profile.count &db))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test
+          &(the (Maybe String) (Maybe.Nothing))
+          (Profile.bio &p)
+          "upsert overwrites Just with NULL"))
+      (assert-equal test 1 n "upsert with NULLs produces one row")))
+
+  ; aggregates skip NULLs rather than counting them as zero
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Nothing)
+                                     (Maybe.Just 10)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"bob"
+                                     (Maybe.Nothing)
+                                     (Maybe.Just 20)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"cy"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (let-do [s (ok (Profile.sum &db "age"))
+             a (ok (Profile.avg &db "age"))
+             mx (ok (Profile.max-val &db "age"))]
+      (SQLite3.close db)
+      (ignore
+        (assert-equal test 30.0 s "sum over a nullable column skips NULLs"))
+      (ignore
+        (assert-equal test 15.0 a "avg over a nullable column skips NULLs"))
+      (assert-equal test 20.0 mx "max-val over a nullable column skips NULLs")))
+
+  ; aggregates over an all-NULL column yield 0.0
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing)
+                                     (Maybe.Nothing))))
+    (let-do [s (ok (Profile.sum &db "age"))
+             a (ok (Profile.avg &db "age"))
+             mn (ok (Profile.min-val &db "age"))]
+      (SQLite3.close db)
+      (ignore (assert-equal test 0.0 s "sum over an all-NULL column is 0.0"))
+      (ignore (assert-equal test 0.0 a "avg over an all-NULL column is 0.0"))
+      (assert-equal test 0.0 mn "min-val over an all-NULL column is 0.0")))
+
+  ; find-ordered puts NULLs first, matching SQLite ordering
+  (let-do [db (fresh-profiles)]
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"ann"
+                                     (Maybe.Nothing)
+                                     (Maybe.Just 30)
+                                     (Maybe.Nothing))))
+    (ignore
+      (Profile.insert &db
+                      &(Profile.init 0
+                                     @"bob"
+                                     (Maybe.Just @"hi")
+                                     (Maybe.Just 40)
+                                     (Maybe.Nothing))))
+    (let-do [ps (ok (Profile.find-ordered &db "bio ASC"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "ann"
+        (Profile.handle (Array.unsafe-nth &ps 0))
+        "find-ordered on a nullable column sorts NULLs first"))))

@@ -38,6 +38,31 @@ driver.
 The first argument to `derive-model` is the type, the second is the backend
 module, and the third is the array of primary-key fields (one or more).
 
+### Nullable columns
+
+A field typed `(Maybe T)` becomes a nullable column. `Maybe.Nothing`
+is written as SQL `NULL`, and a `NULL` read back becomes `Maybe.Nothing`:
+
+```clojure
+(deftype Profile [id Int handle String bio (Maybe String) age (Maybe Int)])
+(derive-model Profile SQLiteBackend [id Int])
+
+(ignore
+  (Profile.insert &db
+                  &(Profile.init 0 @"ann" (Maybe.Just @"hi") (Maybe.Nothing))))
+
+(Profile.find-where &db "bio IS NULL" &[])
+```
+
+`update` and `upsert` set a column back to `NULL` by writing
+`Maybe.Nothing`, and `IS NULL` / `IS NOT NULL` work in any WHERE clause.
+Aggregates follow SQL semantics and skip `NULL` rows, so `sum` over a
+column that is `NULL` everywhere returns 0.0.
+
+Primary-key fields cannot be nullable, and neither `(Maybe (Maybe T))`
+nor a `Maybe` of an unsupported type is allowed; both raise a macro error
+at expansion time.
+
 ### Composite primary keys
 
 ```clojure
@@ -272,8 +297,12 @@ code.
 )
 ```
 
+The `t` passed to `sql-type`, `extract-col`, and `bind-value` is the
+field's declared type, so it is a list `(Maybe T)` for a nullable field
+and a bare symbol otherwise.
+
 `backends/sqlite3.carp` is the reference implementation. It is small
-(under 100 lines) and a good starting point for a new backend.
+(under 150 lines) and a good starting point for a new backend.
 
 ## Limitations
 
@@ -282,7 +311,9 @@ code.
 - `update` overwrites all non-PK fields. The typical workflow is
   `find-by-id`, mutate the result, then `update`.
 - The macro only understands the Carp value types the chosen backend
-  registers. Anything else raises a macro error at expansion time.
+  registers. The SQLite backend supports `Int`, `Long`, `Double`,
+  `Float`, `String`, and `Bool`, plus `(Maybe T)` of any of those.
+  Anything else raises a macro error at expansion time.
 - `with-transaction` requires the body to return a `(Result a String)`.
   Use `do` to group multiple expressions.
 
