@@ -63,6 +63,11 @@ Primary-key fields cannot be nullable, and neither `(Maybe (Maybe T))`
 nor a `Maybe` of an unsupported type is allowed; both raise a macro error
 at expansion time.
 
+`create-table` emits `NOT NULL` for every column that is not a `Maybe`,
+so the schema enforces what the Carp types claim. Since the DDL is
+`CREATE TABLE IF NOT EXISTS`, this only applies to tables created from
+now on; existing databases keep their current schema.
+
 ### Composite primary keys
 
 ```clojure

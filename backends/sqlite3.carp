@@ -51,7 +51,7 @@ else raises a macro error at expansion time.
   (defndynamic sql-type [t]
     (if (SQLiteBackend.nullable? t)
       (SQLiteBackend.scalar-sql-type (SQLiteBackend.inner-type t))
-      (SQLiteBackend.scalar-sql-type t)))
+      (String.concat [(SQLiteBackend.scalar-sql-type t) " NOT NULL"])))
 
   ; SQLite parameter placeholders are 1-indexed, `?1 ?2 ...`.
   (hidden placeholder)

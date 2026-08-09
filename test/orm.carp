@@ -1714,4 +1714,24 @@
       (assert-equal test
         "ann"
         (Profile.handle (Array.unsafe-nth &ps 0))
-        "find-ordered on a nullable column sorts NULLs first"))))
+        "find-ordered on a nullable column sorts NULLs first")))
+
+  ; a non-nullable column rejects a NULL instead of decoding it as a zero value
+  (let-do [db (fresh-db)
+           res (SQLite3.query &db
+                              "INSERT INTO Todo (id, text, done) VALUES (1, NULL, 0)"
+                              &[])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Error _) true (Result.Success _) false)
+      "a non-nullable column rejects a NULL"))
+
+  ; the same NULL is accepted by a nullable column
+  (let-do [db (fresh-profiles)
+           res (SQLite3.query &db
+                              "INSERT INTO Profile (id, handle, bio) VALUES (1, 'ann', NULL)"
+                              &[])]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "a nullable column accepts a NULL")))
