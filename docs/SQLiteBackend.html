@@ -46,7 +46,8 @@ emit SQL and row marshalling.</p>
 </code></pre>
 <p>Generated functions take an <code>&amp;SQLite3.SQLite</code> as their first argument.
 Supported field types are <code>Int</code>, <code>Long</code>, <code>Double</code>, <code>Float</code>, <code>String</code>, and
-<code>Bool</code>. Anything else raises a macro error at expansion time.</p>
+<code>Bool</code>, plus <code>(Maybe T)</code> of any of those for a nullable column. Anything
+else raises a macro error at expansion time.</p>
 
                 </div>
             </div>
