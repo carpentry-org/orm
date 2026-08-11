@@ -37,6 +37,12 @@
    rating (Maybe Double)])
 (derive-model Profile SQLiteBackend [id Int])
 
+; Model with a single non-integer primary key
+(deftype Country [code String
+                  name String
+                  population Int])
+(derive-model Country SQLiteBackend [code String])
+
 ; Open a fresh in-memory DB and run the Todo table migration.
 (defn fresh-db []
   (let-do [db (ok (SQLite3.open ":memory:"))]
@@ -47,6 +53,13 @@
   (let-do [db (ok (SQLite3.open ":memory:"))]
     (ignore (Profile.create-table &db))
     db))
+
+(defn fresh-countries []
+  (let-do [db (ok (SQLite3.open ":memory:"))]
+    (ignore (Country.create-table &db))
+    db))
+
+(defn germany [] (Country.init @"de" @"Germany" 84))
 
 (defn insert-todo [db text done] (ok (Todo.insert db &(Todo.init 0 text done))))
 
@@ -1734,4 +1747,124 @@
     (SQLite3.close db)
     (assert-true test
       (match res (Result.Success _) true (Result.Error _) false)
-      "a nullable column accepts a NULL")))
+      "a nullable column accepts a NULL"))
+
+  ; insert binds the PK column when the PK is not an integer
+  (let-do [db (fresh-countries)
+           res (Country.insert &db &(germany))]
+    (SQLite3.close db)
+    (assert-true test
+      (match res (Result.Success _) true (Result.Error _) false)
+      "String PK: insert succeeds"))
+
+  ; the PK value written by insert lands in the PK column
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (let-do [n (ok (Country.count-where &db "code = ?1" &[(to-sqlite3 @"de")]))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "String PK: insert preserves the PK value")))
+
+  ; find-by-id selects the row named by a non-integer PK
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.insert &db &(Country.init @"fr" @"France" 68)))
+    (let-do [c (ok (Country.find-by-id &db "fr"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "France"
+        (Country.name &c)
+        "String PK: find-by-id returns the correct name")))
+
+  ; find-by-id round-trips the non-PK fields too
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.insert &db &(Country.init @"fr" @"France" 68)))
+    (let-do [c (ok (Country.find-by-id &db "fr"))]
+      (SQLite3.close db)
+      (assert-equal test
+        68
+        @(Country.population &c)
+        "String PK: find-by-id returns the correct population")))
+
+  ; find-by-id not found
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (let-do [res (Country.find-by-id &db "zz")]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Error _) true (Result.Success _) false)
+        "String PK: find-by-id returns error when not found")))
+
+  ; update keys off the PK on the row
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.update &db &(Country.init @"de" @"Deutschland" 84)))
+    (let-do [c (ok (Country.find-by-id &db "de"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "Deutschland"
+        (Country.name &c)
+        "String PK: update modifies a data field")))
+
+  ; delete-by-id removes only the matching row
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.insert &db &(Country.init @"fr" @"France" 68)))
+    (ignore (Country.delete-by-id &db "de"))
+    (let-do [remaining (ok (Country.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        1
+        (Array.length &remaining)
+        "String PK: delete-by-id removes exactly one row")))
+
+  ; delete-by-id leaves the rows it did not name
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.insert &db &(Country.init @"fr" @"France" 68)))
+    (ignore (Country.delete-by-id &db "de"))
+    (let-do [remaining (ok (Country.find-all &db))]
+      (SQLite3.close db)
+      (assert-equal test
+        "fr"
+        (Country.code (Array.unsafe-nth &remaining 0))
+        "String PK: delete-by-id keeps the non-matching row")))
+
+  ; batch-insert binds the PK column too
+  (let-do [db (fresh-countries)]
+    (ignore
+      (Country.batch-insert &db &[(germany) (Country.init @"fr" @"France" 68)]))
+    (let-do [c (ok (Country.find-by-id &db "fr"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "France"
+        (Country.name &c)
+        "String PK: batch-insert preserves the PK value")))
+
+  ; upsert on an existing PK updates in place rather than duplicating
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.upsert &db &(Country.init @"de" @"Deutschland" 85)))
+    (let-do [n (ok (Country.count &db))]
+      (SQLite3.close db)
+      (assert-equal test 1 n "String PK: upsert does not duplicate the row")))
+
+  ; upsert overwrites the data fields of the conflicting row
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (ignore (Country.upsert &db &(Country.init @"de" @"Deutschland" 85)))
+    (let-do [c (ok (Country.find-by-id &db "de"))]
+      (SQLite3.close db)
+      (assert-equal test
+        "Deutschland"
+        (Country.name &c)
+        "String PK: upsert overwrites the data fields")))
+
+  ; a second insert of the same PK is rejected
+  (let-do [db (fresh-countries)]
+    (ignore (Country.insert &db &(germany)))
+    (let-do [res (Country.insert &db &(Country.init @"de" @"Germany" 84))]
+      (SQLite3.close db)
+      (assert-true test
+        (match res (Result.Error _) true (Result.Success _) false)
+        "String PK: a duplicate PK is rejected"))))

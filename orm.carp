@@ -146,6 +146,10 @@ any database with a backend.
         mems)
       array))
 
+  ; A single integer PK is database-assigned; any other type is caller-supplied.
+  (hidden auto-pk-type?)
+  (defndynamic auto-pk-type? [t] (ORM.member? t '(Int Long)))
+
   ; Single-PK models use `pk`; composite-PK models use `pk0`, `pk1`, ...
   (hidden pk-param-sym)
   (defndynamic pk-param-sym [n-pks i]
@@ -261,10 +265,12 @@ any database with a backend.
 [backend API](#backend-api). `pk-fields` is an array of `[field Type ...]`
 describing the primary key (one or more fields).
 
-For single-PK models, `insert` omits the PK column (auto-increment) and
-returns the assigned rowid as a `Long`. For composite-PK models, `insert` includes
-all fields and returns `(Result () String)`. `batch-insert` inserts
-multiple rows in a single SQL statement and returns `(Result () String)`.
+For models whose primary key is a single `Int` or `Long` field, `insert`
+omits the PK column (the database assigns it) and returns the assigned
+rowid as a `Long`. For every other primary key — composite, or a single
+field of any other type — `insert` includes all fields and returns
+`(Result () String)`. `batch-insert` inserts multiple rows in a single
+SQL statement and returns `(Result () String)`.
 `find-by-id` and `delete-by-id` accept one argument per PK field.
 
 `drop-table` removes the table from the database (safe to call even
@@ -296,7 +302,7 @@ The generated functions live in the type's module.")
         table-name (str name)
         n-data (length data-mems)
         n-pk (length pk-mems)
-        is-composite (< 1 n-pk)
+        is-auto-pk (if (= 1 n-pk) (ORM.auto-pk-type? (cadr (car pk-mems))) false)
         _ (cond
           (= 0 n-pk)
             (macro-error
@@ -324,10 +330,10 @@ The generated functions live in the type's module.")
            pk-name-str
            "))"])
         drop-sql (String.concat ["DROP TABLE IF EXISTS " table-name])
-        insert-names (if is-composite all-names data-names)
-        insert-placeholders (if is-composite
-          (ORM.sql-placeholders backend all-mems 1)
-          data-placeholders)
+        insert-names (if is-auto-pk data-names all-names)
+        insert-placeholders (if is-auto-pk
+          data-placeholders
+          (ORM.sql-placeholders backend all-mems 1))
         insert-sql (String.concat
           ["INSERT INTO "
            table-name
@@ -374,7 +380,7 @@ The generated functions live in the type's module.")
         select-first-sql (String.concat [select-all-sql " LIMIT 1"])
         last-id-sql (ORM.backend-call backend 'last-insert-id-sql (list))
         query-sym (ORM.backend-call backend 'query-fn (list))
-        insert-mems (if is-composite all-mems data-mems)
+        insert-mems (if is-auto-pk data-mems all-mems)
         insert-binds (ORM.bind-row-fields backend name insert-mems)
         update-binds (collect-into
           (append
@@ -451,19 +457,7 @@ does not exist.")
                             '(Result.Error e)
                             '(Result.Error e)))
 
-                (if is-composite
-                  (list 'defn
-                        'insert
-                        ['db 'row]
-                        (list 'match
-                              (list query-sym
-                                    'db
-                                    insert-sql
-                                    (list 'ref insert-binds))
-                              '(Result.Success _)
-                              '(Result.Success ())
-                              '(Result.Error e)
-                              '(Result.Error e)))
+                (if is-auto-pk
                   (list 'defn
                         'insert
                         ['db 'row]
@@ -492,7 +486,19 @@ does not exist.")
                                                 (list 'Result.Success
                                                       (ORM.extract-for backend
                                                                        'Long
-                                                                       (Symbol.from "c0")))))))))
+                                                                       (Symbol.from "c0"))))))))
+                  (list 'defn
+                        'insert
+                        ['db 'row]
+                        (list 'match
+                              (list query-sym
+                                    'db
+                                    insert-sql
+                                    (list 'ref insert-binds))
+                              '(Result.Success _)
+                              '(Result.Success ())
+                              '(Result.Error e)
+                              '(Result.Error e))))
 
                 (list 'doc
                       'batch-insert

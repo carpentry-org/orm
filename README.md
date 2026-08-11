@@ -69,22 +69,46 @@ so the schema enforces what the Carp types claim. Since the DDL is
 `CREATE TABLE IF NOT EXISTS`, this only applies to tables created from
 now on; existing databases keep their current schema.
 
-### Composite primary keys
+### Primary keys
+
+A model whose primary key is a single `Int` or `Long` field gets a
+database-assigned key: `insert` leaves the PK column out of the statement
+and returns the new rowid as a `Long`.
+
+```clojure
+(deftype Item [id Int text String done Bool])
+(derive-model Item SQLiteBackend [id Int])
+
+(Item.insert &db &(Item.init 0 @"buy milk" false))
+; => (Success 1)
+```
+
+Every other primary key is user-supplied, so `insert` writes all fields —
+including the PK — and returns `(Result () String)`. That covers composite
+keys:
 
 ```clojure
 (deftype Enrollment [sid Int cid Int grade String])
 (derive-model Enrollment SQLiteBackend [sid Int cid Int])
-```
 
-For composite-PK models, `insert` includes all fields (PK values are
-user-supplied, not auto-incremented) and returns `(Result () String)`.
-`find-by-id` and `delete-by-id` accept one argument per PK field:
-
-```clojure
 (ignore (Enrollment.insert &db &(Enrollment.init 1 101 @"A")))
 (Enrollment.find-by-id &db &1 &101)
 (Enrollment.delete-by-id &db &1 &101)
 ```
+
+and single keys of a non-integer type, the natural shape for slugs,
+usernames, or ISO codes:
+
+```clojure
+(deftype Country [code String name String population Int])
+(derive-model Country SQLiteBackend [code String])
+
+(ignore (Country.insert &db &(Country.init @"de" @"Germany" 84)))
+(Country.find-by-id &db "de")
+; => (Success (Country @"de" @"Germany" 84))
+```
+
+`find-by-id` and `delete-by-id` always accept one argument per PK field.
 
 ### Creating the table
 
@@ -108,7 +132,10 @@ statement fails (e.g. the database is read-only).
 
 `insert` writes the non-PK fields and returns the auto-assigned rowid
 as a `Long`, wrapped in a `Result`. The PK field on the input row is
-ignored, which is why we pass `0`.
+ignored, which is why we pass `0`. This applies to models with a single
+`Int` or `Long` primary key; see [Primary keys](#primary-keys) for the
+other shapes, where `insert` writes the PK too and returns
+`(Result () String)`.
 
 ### Reading
 
@@ -279,9 +306,11 @@ following functions to the `T` module:
 | `max-val`            | `(Fn [&Backend.Db &String] (Result Double String))` |
 | `max-val-where`      | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
 
-For composite-PK models (`[pk1 T1 pk2 T2 ...]`), `insert` returns
-`(Result () String)` (no rowid), and `find-by-id`/`delete-by-id` accept
-one argument per PK field (`&Pk1 &Pk2 ...`).
+The `insert` signature above is the one for a single `Int`/`Long` PK. For
+every other primary key — composite `[pk1 T1 pk2 T2 ...]`, or a single
+field of any other type — `insert` returns `(Result () String)` (no
+rowid). `find-by-id`/`delete-by-id` accept one argument per PK field
+(`&Pk1 &Pk2 ...`).
 
 ## Backends
 
