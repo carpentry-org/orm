@@ -110,7 +110,7 @@ usernames, or ISO codes:
 
 `find-by-id` and `delete-by-id` always accept one argument per PK field.
 
-### Creating the table
+### Creating and dropping the table
 
 ```clojure
 (let-do [db (Result.unsafe-from-success (SQLite3.open "app.db"))]
@@ -121,6 +121,13 @@ usernames, or ISO codes:
 `create-table` runs `CREATE TABLE IF NOT EXISTS`, so it is safe to call on
 every startup. It returns `(Result () String)` — an error if the
 statement fails (e.g. the database is read-only).
+
+```clojure
+(ignore (Item.drop-table &db))
+```
+
+`drop-table` runs `DROP TABLE IF EXISTS` and also returns
+`(Result () String)`, so dropping a table that is not there succeeds.
 
 ### Inserting
 
@@ -136,6 +143,30 @@ ignored, which is why we pass `0`. This applies to models with a single
 `Int` or `Long` primary key; see [Primary keys](#primary-keys) for the
 other shapes, where `insert` writes the PK too and returns
 `(Result () String)`.
+
+To insert many rows at once, `batch-insert` sends a single
+`INSERT ... VALUES (...), (...), ...` statement instead of one statement
+per row:
+
+```clojure
+(ignore (Item.batch-insert &db &[(Item.init 0 @"buy milk" false)
+                                 (Item.init 0 @"write carp" true)]))
+```
+
+It returns `(Result () String)` — no rowids — and an empty array is a
+successful no-op. It writes the same columns as `insert`: the PK is
+omitted for a single `Int`/`Long` PK and written for every other shape.
+
+`upsert` inserts a row, or overwrites the non-PK fields of the row that
+is already there, using `INSERT ... ON CONFLICT DO UPDATE`:
+
+```clojure
+(ignore (Item.upsert &db &(Item.init 1 @"buy oat milk" true)))
+```
+
+Unlike `insert`, `upsert` always writes every column, so you have to
+supply the PK yourself even for a model whose `insert` would have the
+database assign one. It returns `(Result () String)`.
 
 ### Reading
 
@@ -170,6 +201,36 @@ The PK argument is passed as a reference even for value types like `Int`.
 `SQLite3.Type` parameter values. Parameters use positional placeholders
 (`?1`, `?2`, …) and are bound safely — they are never interpolated into
 the SQL string. The function returns all matching rows.
+
+```clojure
+; One row, no primary key needed
+(match (Item.find-first &db)
+  (Result.Success item) (println* &item)
+  (Result.Error _) (println* "table is empty"))
+
+; One row matching a WHERE clause
+(match (Item.find-first-where &db "done = ?1" &[(to-sqlite3 0)])
+  (Result.Success item) (println* &item)
+  (Result.Error _) (println* "nothing left to do"))
+```
+
+`find-first` and `find-first-where` add `LIMIT 1` and return a single
+`(Result T String)` rather than an array. Neither adds an ORDER BY, so
+which row you get is up to the database; use `find-page` with a limit of
+1 when it matters. Both are an `Error` when nothing matches, so they
+cannot tell an empty result from a failed query — reach for `find-where`
+if you need to.
+
+```clojure
+; Is there anything left to do?
+(match (Item.exists? &db "done = ?1" &[(to-sqlite3 0)])
+  (Result.Success any?) (println* any?)
+  (Result.Error e) (IO.errorln &e))
+```
+
+`exists?` returns `(Result Bool String)` and takes the same WHERE clause
+and parameters as `find-where`. It runs a `COUNT(*)`, so no rows are
+marshalled.
 
 ### Ordering and pagination
 
@@ -216,13 +277,56 @@ clause and returns `(Result () String)`. Partial updates are not
 supported, so the typical pattern is `find-by-id` then mutate then
 `update`.
 
+`update-where` is the set-based counterpart: it takes a SQL SET fragment
+and a WHERE fragment, and touches only the columns you name.
+
+```clojure
+; Mark everything that is not done as done
+(ignore (Item.update-where &db "done = ?1" "done = ?2"
+                           &[(to-sqlite3 1) (to-sqlite3 0)]))
+
+; Several columns at once
+(ignore (Item.update-where &db "text = ?1, done = ?2" "id = ?3"
+                           &[(to-sqlite3 @"bought milk") (to-sqlite3 1)
+                             (to-sqlite3 1)]))
+```
+
+A single parameter array covers both fragments, so keep the placeholder
+numbers distinct across them. It returns `(Result () String)`.
+
 ### Deleting
 
 ```clojure
 (ignore (Item.delete-by-id &db &1))
 ```
 
+`delete-where` deletes every row matching a WHERE clause instead of one
+row by primary key:
+
+```clojure
+(ignore (Item.delete-where &db "done = ?1" &[(to-sqlite3 1)]))
+```
+
+Both return `(Result () String)`, and neither reports how many rows were
+removed — deleting nothing is a success, not an error.
+
 ### Aggregates
+
+```clojure
+; How many rows are there?
+(match (Item.count &db)
+  (Result.Success n) (println* n)
+  (Result.Error e) (IO.errorln &e))
+
+; How many match a WHERE clause?
+(match (Item.count-where &db "done = ?1" &[(to-sqlite3 0)])
+  (Result.Success n) (println* n)
+  (Result.Error e) (IO.errorln &e))
+```
+
+`count` and `count-where` return `(Result Int String)` — an `Int`, not
+the `Double` the other aggregates use. An empty table or an unmatched
+WHERE clause counts 0; a missing table is an error.
 
 ```clojure
 ; Sum of a numeric column
@@ -242,7 +346,7 @@ supported, so the typical pattern is `find-by-id` then mutate then
 
 `sum`, `avg`, `min-val`, and `max-val` take a column name and return
 `(Result Double String)`. Each has a `-where` variant that accepts a
-WHERE clause and bound parameters. Results are always returned as
+WHERE clause and bound parameters. These four are always returned as
 `Double`, even for integer columns. Empty tables or unmatched WHERE
 clauses return 0.0.
 
@@ -287,16 +391,26 @@ following functions to the `T` module:
 | Function             | Type                                           |
 |----------------------|------------------------------------------------|
 | `create-table`       | `(Fn [&Backend.Db] (Result () String))`        |
+| `drop-table`         | `(Fn [&Backend.Db] (Result () String))`        |
 | `insert`             | `(Fn [&Backend.Db &T] (Result Long String))`   |
+| `batch-insert`       | `(Fn [&Backend.Db &(Array T)] (Result () String))` |
+| `upsert`             | `(Fn [&Backend.Db &T] (Result () String))`     |
 | `find-all`           | `(Fn [&Backend.Db] (Result (Array T) String))` |
 | `find-by-id`         | `(Fn [&Backend.Db &Pk] (Result T String))`     |
+| `find-first`         | `(Fn [&Backend.Db] (Result T String))`         |
 | `find-where`         | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result (Array T) String))` |
+| `find-first-where`   | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result T String))` |
 | `find-ordered`       | `(Fn [&Backend.Db &String] (Result (Array T) String))` |
 | `find-where-ordered` | `(Fn [&Backend.Db &String &(Array Backend.Type) &String] (Result (Array T) String))` |
 | `find-page`          | `(Fn [&Backend.Db &String Int Int] (Result (Array T) String))` |
 | `find-where-page`    | `(Fn [&Backend.Db &String &(Array Backend.Type) &String Int Int] (Result (Array T) String))` |
+| `exists?`            | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result Bool String))` |
 | `update`             | `(Fn [&Backend.Db &T] (Result () String))`     |
+| `update-where`       | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result () String))` |
 | `delete-by-id`       | `(Fn [&Backend.Db &Pk] (Result () String))`    |
+| `delete-where`       | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result () String))` |
+| `count`              | `(Fn [&Backend.Db] (Result Int String))`       |
+| `count-where`        | `(Fn [&Backend.Db &String &(Array Backend.Type)] (Result Int String))` |
 | `sum`                | `(Fn [&Backend.Db &String] (Result Double String))` |
 | `sum-where`          | `(Fn [&Backend.Db &String &String &(Array Backend.Type)] (Result Double String))` |
 | `avg`                | `(Fn [&Backend.Db &String] (Result Double String))` |
@@ -311,6 +425,10 @@ every other primary key — composite `[pk1 T1 pk2 T2 ...]`, or a single
 field of any other type — `insert` returns `(Result () String)` (no
 rowid). `find-by-id`/`delete-by-id` accept one argument per PK field
 (`&Pk1 &Pk2 ...`).
+
+`batch-insert` follows `insert`: it omits the PK column for a single
+`Int`/`Long` PK and writes it for every other shape. `upsert` always
+writes every column, so its signature does not vary.
 
 ## Backends
 
