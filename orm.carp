@@ -1,4 +1,4 @@
-(load "git@github.com:carpentry-org/strbuf@0.1.0")
+(load "git@github.com:carpentry-org/strbuf@0.2.1")
 
 (doc ORM "is a database-agnostic ORM for Carp.
 
@@ -8,13 +8,13 @@ Load a backend from the package. The SQLite backend pulls in the
 ORM core and the `sqlite3` package transitively:
 
 ```
-(load \"git@github.com:carpentry-org/orm@0.5.0\" \"backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.5.1\" \"backends/sqlite3.carp\")
 ```
 
 ## Usage
 
 ```
-(load \"git@github.com:carpentry-org/orm@0.5.0\" \"backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.5.1\" \"backends/sqlite3.carp\")
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
