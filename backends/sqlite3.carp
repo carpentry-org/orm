@@ -1,5 +1,5 @@
 (load "../orm.carp")
-(load "git@github.com:carpentry-org/sqlite3@0.2.0")
+(load "git@github.com:carpentry-org/sqlite3@0.2.1")
 
 (doc SQLiteBackend "is the SQLite backend for the ORM.
 
@@ -8,7 +8,7 @@ package, then registers the dynamic helpers that `derive-model` uses to
 emit SQL and row marshalling.
 
 ```
-(load \"git@github.com:carpentry-org/orm@0.5.2\" \"backends/sqlite3.carp\")
+(load \"git@github.com:carpentry-org/orm@0.5.3\" \"backends/sqlite3.carp\")
 
 (deftype Item [id Int text String done Bool])
 (derive-model Item SQLiteBackend [id Int])
